@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build --mode development",
     "typecheck": "tsc -b --noEmit",
-    "test": "vitest run --config vitest.config.ts"
+    "test": "vitest run --config vitest.config.ts",
+    "build:release": "tsc -b && vite build --mode production"
   },
   "dependencies": {
     "@cp-notes/shared": "*",

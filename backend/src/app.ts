@@ -1,3 +1,6 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { createAuth } from "./auth.js";
 import cors, { type CorsOptions } from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { ZodError, z } from "zod";
@@ -22,6 +25,11 @@ import { AppError } from "./errors.js";
 export interface CreateAppOptions {
   databasePath: string;
   websiteOrigins?: string[];
+  extensionOrigins?: string[];
+  localDevelopment?: boolean;
+  sessionDays?: number;
+  existingOnly?: boolean;
+  websiteDirectory?: string;
 }
 
 function oneQueryValue(value: unknown): string | undefined {
@@ -70,119 +78,153 @@ function datePageOptions(request: Request): DatePageOptions {
   };
 }
 
-function allowedOrigins(websiteOrigins: string[]): CorsOptions["origin"] {
+function allowedOrigins(origins: string[]): CorsOptions["origin"] {
   return (origin, callback) => {
     const allowed =
-      origin === undefined || websiteOrigins.includes(origin) || origin.startsWith("chrome-extension://");
+      origin === undefined || origins.includes(origin);
     callback(allowed ? null : new AppError(403, "origin_not_allowed", "This origin cannot access CP Notes"), allowed);
   };
 }
 
-export function createApp(options: CreateAppOptions): { app: express.Express; close: () => void } {
-  const database = new NotesDatabase(options.databasePath);
+export function createApp(options: CreateAppOptions): { app: express.Express; close: () => void; database: NotesDatabase } {
+  const database = new NotesDatabase(options.databasePath, { existingOnly: options.existingOnly ?? false });
   const app = express();
   const origins = options.websiteOrigins ?? ["http://localhost:5173", "http://127.0.0.1:5173"];
 
+  if (options.websiteDirectory && !existsSync(join(options.websiteDirectory, "index.html"))) {
+    database.close();
+    throw new Error("Built website is missing. Build the release before starting the app.");
+  }
+  const extensionOrigins = options.extensionOrigins ?? [];
+  const auth = createAuth(database, { websiteOrigins: origins, extensionOrigins, localDevelopment: options.localDevelopment ?? false, sessionDays: options.sessionDays ?? 30 });
+  const api = express.Router();
+  app.set("trust proxy", "loopback");
   app.disable("x-powered-by");
-  app.use(cors({ origin: allowedOrigins(origins) }));
+  app.use((_request, response, next) => {
+    response.set("X-Content-Type-Options", "nosniff");
+    response.set("Referrer-Policy", "no-referrer");
+    response.set("X-Frame-Options", "DENY");
+    response.set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+    next();
+  });
+  api.use(cors({ origin: allowedOrigins([...origins, ...extensionOrigins]), credentials: true }));
+  api.use((_request, response, next) => { response.set("Cache-Control", "no-store"); next(); });
   app.use(express.json({ limit: "256kb" }));
 
   app.get("/health", (_request, response) => {
-    response.json({ data: { status: "ok" } });
+    database.health();
+    response.set("Cache-Control", "no-store").json({ data: { status: "ok" } });
   });
 
-  app.post("/problems", (request, response) => {
-    const problem = database.upsertProblem(ProblemInputSchema.parse(request.body));
+  api.use("/auth", auth.router);
+  api.use((request, response, next) => {
+    response.locals.userId = auth.session(request).user.id;
+    next();
+  });
+
+  api.post("/problems", (request, response) => {
+    const problem = database.upsertProblem(response.locals.userId, ProblemInputSchema.parse(request.body));
     response.status(201).json({ data: problem });
   });
 
-  app.get("/problems", (request, response) => {
-    const result = database.listProblems({ ...pageOptions(request), query: oneQueryValue(request.query.query) });
+  api.get("/problems", (request, response) => {
+    const result = database.listProblems(response.locals.userId, { ...pageOptions(request), query: oneQueryValue(request.query.query) });
     response.json(result);
   });
 
-  app.post("/patterns", (request, response) => {
-    response.status(201).json({ data: database.createPattern(PatternCreateSchema.parse(request.body)) });
+  api.post("/patterns", (request, response) => {
+    response.status(201).json({ data: database.createPattern(response.locals.userId, PatternCreateSchema.parse(request.body)) });
   });
-  app.get("/patterns", (request, response) => {
-    response.json(database.listPatterns({ ...pageOptions(request), query: oneQueryValue(request.query.query) }));
+  api.get("/patterns", (request, response) => {
+    response.json(database.listPatterns(response.locals.userId, { ...pageOptions(request), query: oneQueryValue(request.query.query) }));
   });
-  app.patch("/patterns/:id", (request, response) => {
-    response.json({ data: database.updatePattern(parseId(request), PatternPatchSchema.parse(request.body)) });
+  api.patch("/patterns/:id", (request, response) => {
+    response.json({ data: database.updatePattern(response.locals.userId, parseId(request), PatternPatchSchema.parse(request.body)) });
   });
-  app.delete("/patterns/:id", (request, response) => {
-    database.deleteNote("pattern", parseId(request));
+  api.delete("/patterns/:id", (request, response) => {
+    database.deleteNote(response.locals.userId, "pattern", parseId(request));
     response.status(204).end();
   });
 
-  app.post("/mistakes", (request, response) => {
-    response.status(201).json({ data: database.createMistake(MistakeCreateSchema.parse(request.body)) });
+  api.post("/mistakes", (request, response) => {
+    response.status(201).json({ data: database.createMistake(response.locals.userId, MistakeCreateSchema.parse(request.body)) });
   });
-  app.get("/mistakes", (request, response) => {
+  api.get("/mistakes", (request, response) => {
     const rootCauseValue = oneQueryValue(request.query.rootCause) ?? oneQueryValue(request.query.root_cause);
     const rootCause = rootCauseValue ? RootCauseSchema.parse(rootCauseValue) : undefined;
-    response.json(database.listMistakes({ ...datePageOptions(request), ...(rootCause ? { rootCause } : {}) }));
+    response.json(database.listMistakes(response.locals.userId, { ...datePageOptions(request), ...(rootCause ? { rootCause } : {}) }));
   });
-  app.get("/mistakes/stats", (_request, response) => {
-    response.json({ data: database.mistakeStats() });
+  api.get("/mistakes/stats", (_request, response) => {
+    response.json({ data: database.mistakeStats(response.locals.userId) });
   });
-  app.patch("/mistakes/:id", (request, response) => {
-    response.json({ data: database.updateMistake(parseId(request), MistakePatchSchema.parse(request.body)) });
+  api.patch("/mistakes/:id", (request, response) => {
+    response.json({ data: database.updateMistake(response.locals.userId, parseId(request), MistakePatchSchema.parse(request.body)) });
   });
-  app.delete("/mistakes/:id", (request, response) => {
-    database.deleteNote("mistake", parseId(request));
+  api.delete("/mistakes/:id", (request, response) => {
+    database.deleteNote(response.locals.userId, "mistake", parseId(request));
     response.status(204).end();
   });
 
-  app.post("/snippets", (request, response) => {
-    response.status(201).json({ data: database.createSnippet(SnippetCreateSchema.parse(request.body)) });
+  api.post("/snippets", (request, response) => {
+    response.status(201).json({ data: database.createSnippet(response.locals.userId, SnippetCreateSchema.parse(request.body)) });
   });
-  app.get("/snippets", (request, response) => {
+  api.get("/snippets", (request, response) => {
     response.json(
-      database.listSnippets({
+      database.listSnippets(response.locals.userId, {
         ...pageOptions(request),
         query: oneQueryValue(request.query.query),
         language: oneQueryValue(request.query.language),
       }),
     );
   });
-  app.patch("/snippets/:id", (request, response) => {
-    response.json({ data: database.updateSnippet(parseId(request), SnippetPatchSchema.parse(request.body)) });
+  api.patch("/snippets/:id", (request, response) => {
+    response.json({ data: database.updateSnippet(response.locals.userId, parseId(request), SnippetPatchSchema.parse(request.body)) });
   });
-  app.delete("/snippets/:id", (request, response) => {
-    database.deleteNote("snippet", parseId(request));
+  api.delete("/snippets/:id", (request, response) => {
+    database.deleteNote(response.locals.userId, "snippet", parseId(request));
     response.status(204).end();
   });
 
-  app.post("/editorial", (request, response) => {
-    response.status(201).json({ data: database.createEditorial(EditorialCreateSchema.parse(request.body)) });
+  api.post("/editorial", (request, response) => {
+    response.status(201).json({ data: database.createEditorial(response.locals.userId, EditorialCreateSchema.parse(request.body)) });
   });
-  app.get("/editorial", (request, response) => {
-    response.json(database.listEditorial({ ...pageOptions(request), query: oneQueryValue(request.query.query) }));
+  api.get("/editorial", (request, response) => {
+    response.json(database.listEditorial(response.locals.userId, { ...pageOptions(request), query: oneQueryValue(request.query.query) }));
   });
-  app.patch("/editorial/:id", (request, response) => {
-    response.json({ data: database.updateEditorial(parseId(request), EditorialPatchSchema.parse(request.body)) });
+  api.patch("/editorial/:id", (request, response) => {
+    response.json({ data: database.updateEditorial(response.locals.userId, parseId(request), EditorialPatchSchema.parse(request.body)) });
   });
-  app.delete("/editorial/:id", (request, response) => {
-    database.deleteNote("editorial", parseId(request));
+  api.delete("/editorial/:id", (request, response) => {
+    database.deleteNote(response.locals.userId, "editorial", parseId(request));
     response.status(204).end();
   });
 
-  app.get("/feed", (request, response) => {
+  api.get("/feed", (request, response) => {
     const rawTypes = oneQueryValue(request.query.types);
     let types: NoteType[] | undefined;
     if (rawTypes) {
       const values = rawTypes.split(",").filter(Boolean);
       types = z.array(NoteTypeSchema).min(1).parse(values);
     }
-    response.json(database.listFeed({ ...datePageOptions(request), ...(types ? { types } : {}) }));
+    response.json(database.listFeed(response.locals.userId, { ...datePageOptions(request), ...(types ? { types } : {}) }));
   });
+
+  api.use((_request, _response, next) => next(new AppError(404, "route_not_found", "The requested endpoint does not exist")));
+  app.use("/api", api);
+  if (options.websiteDirectory) {
+    app.use(express.static(options.websiteDirectory, { dotfiles: "deny", index: false }));
+    app.get("/", (_request, response) => response.sendFile(join(options.websiteDirectory!, "index.html")));
+  }
 
   app.use((_request, _response, next) => {
     next(new AppError(404, "route_not_found", "The requested endpoint does not exist"));
   });
 
   app.use((error: unknown, request: Request, response: Response, _next: NextFunction) => {
+    if (typeof error === "object" && error !== null && "status" in error && error.status === 413) {
+      response.status(413).json({ error: { code: "body_too_large", message: "The entry is too large" } });
+      return;
+    }
     if (error instanceof SyntaxError && "status" in error && error.status === 400) {
       response.status(400).json({ error: { code: "invalid_json", message: "The request body is not valid JSON" } });
       return;
@@ -194,7 +236,7 @@ export function createApp(options: CreateAppOptions): { app: express.Express; cl
       return;
     }
     if (error instanceof AppError) {
-      if (error.status >= 500) console.error(`[${request.method} ${request.path}] ${error.code}:`, error);
+      if (error.status >= 500) console.error(`[${request.method}] ${error.code}`);
       response.status(error.status).json({
         error: {
           code: error.code,
@@ -204,11 +246,16 @@ export function createApp(options: CreateAppOptions): { app: express.Express; cl
       });
       return;
     }
-    console.error(`[${request.method} ${request.path}] Unexpected error:`, error);
+    console.error(`[${request.method}] Unexpected server error`, error instanceof Error ? error.name : "Unknown error");
     response.status(500).json({ error: { code: "internal_error", message: "An unexpected error occurred" } });
   });
 
-  return { app, close: () => database.close() };
+  database.pruneSessions();
+  const cleanup = setInterval(() => {
+    try { database.pruneSessions(); } catch (error) { console.error("Session cleanup failed", error instanceof Error ? error.name : "Unknown error"); }
+  }, 60 * 60_000);
+  cleanup.unref();
+  return { app, database, close: () => { clearInterval(cleanup); database.close(); } };
 }
 
 export const supportedNoteTypes = NOTE_TYPES;

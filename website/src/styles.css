@@ -132,3 +132,10 @@ footer { margin-top: 58px; padding-top: 18px; border-top: 1px solid var(--line);
   .note-card { padding-inline: 16px; }
   .dialog { padding: 18px; }
 }
+
+.account-card { margin: 1rem 0; padding: 1.25rem; border: 1px solid var(--line, #ddd); border-radius: 12px; }
+.account-card form { max-width: 420px; display: grid; gap: 1rem; margin-top: 1rem; }
+.account-bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.account-card summary { cursor: pointer; font-weight: 600; }
+.account-card li { margin: .6rem 0; }
+.wrap .wrap { padding: 0; }

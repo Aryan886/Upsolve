@@ -1,31 +1,31 @@
 import { mkdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname } from "node:path";
 import { createApp } from "./app.js";
+import { readConfig } from "./config.js";
 
-const port = Number(process.env.PORT ?? 3000);
-if (!Number.isInteger(port) || port < 1 || port > 65_535) {
-  throw new Error("PORT must be an integer between 1 and 65535");
-}
-
-const databasePath = process.env.DATABASE_PATH ?? resolve("data", "cp-notes.db");
-mkdirSync(dirname(databasePath), { recursive: true });
-
-const { app, close } = createApp({ databasePath });
-const server = app.listen(port, "127.0.0.1", () => {
-  console.log(`CP Notes backend listening at http://localhost:${port}`);
-  console.log(`SQLite database: ${databasePath}`);
+const config = readConfig(process.env);
+if (!config.existingOnly) mkdirSync(dirname(config.databasePath), { recursive: true, mode: 0o700 });
+const { app, close } = createApp(config);
+const server = app.listen(config.port, "127.0.0.1", () => {
+  console.log(`CP Notes listening on loopback port ${config.port}; schema 2`);
 });
-
+server.on("error", (error) => {
+  console.error("HTTP server failed:", error.message);
+  close();
+  process.exitCode = 1;
+});
+let stopping = false;
 function shutdown(signal: string): void {
-  console.log(`Received ${signal}; closing CP Notes backend`);
+  if (stopping) return;
+  stopping = true;
+  console.log(`Received ${signal}; finishing active requests`);
+  const timeout = setTimeout(() => server.closeAllConnections(), 15_000);
+  timeout.unref();
   server.close((error) => {
-    if (error) {
-      console.error("Failed to close HTTP server cleanly:", error);
-      process.exitCode = 1;
-    }
+    clearTimeout(timeout);
+    if (error) { console.error("HTTP shutdown failed:", error.message); process.exitCode = 1; }
     close();
   });
 }
-
 process.once("SIGINT", () => shutdown("SIGINT"));
 process.once("SIGTERM", () => shutdown("SIGTERM"));

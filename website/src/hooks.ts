@@ -26,10 +26,12 @@ export function usePagedResource<T>(
     setError(null);
     void load(controller.signal)
       .then((result) => {
+        if (controller.signal.aborted) return;
         setData(result.data);
         setMeta(result.meta);
       })
       .catch((caught: unknown) => {
+        if (controller.signal.aborted) return;
         if (caught instanceof DOMException && caught.name === "AbortError") return;
         setError(caught instanceof ApiError || caught instanceof Error ? caught.message : "The request failed");
       })

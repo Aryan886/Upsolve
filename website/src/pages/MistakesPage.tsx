@@ -17,7 +17,8 @@ export function MistakesPage({ revision, onChanged }: { revision: number; onChan
   useEffect(() => {
     const controller = new AbortController();
     setStatsError(null);
-    void getMistakeStats(controller.signal).then(setStats).catch((error: unknown) => {
+    void getMistakeStats(controller.signal).then((result) => { if (!controller.signal.aborted) setStats(result); }).catch((error: unknown) => {
+      if (controller.signal.aborted) return;
       if (error instanceof DOMException && error.name === "AbortError") return;
       setStatsError(error instanceof Error ? error.message : "Could not load mistake statistics");
     });

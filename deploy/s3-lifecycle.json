@@ -1,0 +1,9 @@
+{
+  "Rules": [{
+    "ID": "expire-daily-backups",
+    "Status": "Enabled",
+    "Filter": { "Prefix": "daily/" },
+    "Expiration": { "Days": 14 },
+    "AbortIncompleteMultipartUpload": { "DaysAfterInitiation": 1 }
+  }]
+}

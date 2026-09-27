@@ -1,0 +1,10 @@
+# Replace the hostname and email before validation/reload.
+{
+  email operator@example.com
+}
+notes.example.com {
+  encode zstd gzip
+  header Strict-Transport-Security "max-age=31536000"
+  reverse_proxy 127.0.0.1:3000
+  # Do not enable request-body/header logging; credentials and notes are private.
+}

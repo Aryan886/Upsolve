@@ -28,3 +28,16 @@ describe("shared validation", () => {
     expect(isLocalBackendUrl("https://example.com")).toBe(false);
   });
 });
+
+
+describe("LeetCode normalization", () => {
+  it.each(["", "description/", "solutions/", "solutions/123/explanation/", "editorial/", "submissions/", "submissions/123/"])("canonicalizes the %s view", (view) => {
+    expect(detectProblemPage(`https://leetcode.com/problems/two-sum/${view}?envType=study-plan#solution`)).toEqual({ platform: "leetcode", canonicalUrl: "https://leetcode.com/problems/two-sum/", contestId: null });
+  });
+  it("preserves contest context and recognizes www", () => {
+    expect(detectProblemPage("https://www.leetcode.com/contest/weekly-contest-400/problems/two-sum/")).toEqual({ platform: "leetcode", canonicalUrl: "https://leetcode.com/problems/two-sum/", contestId: "weekly-contest-400" });
+  });
+  it.each(["https://leetcode.com/u/person", "https://leetcode.com/submissions/123/", "https://leetcode.com/problems/", "https://leetcode.com/problems/two-sum/unknown", "https://leetcode.com.evil.test/problems/two-sum/", "https://fake.leetcode.com/problems/two-sum/", "ftp://leetcode.com/problems/two-sum/", "https://leetcode.com/problems/two%2Fsum/"])("rejects %s", (url) => {
+    expect(detectProblemPage(url)).toBeNull();
+  });
+});

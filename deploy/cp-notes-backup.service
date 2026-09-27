@@ -1,0 +1,24 @@
+[Unit]
+Description=Consistent CP Notes backup to private S3
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=cp-notes
+Group=cp-notes
+WorkingDirectory=/opt/cp-notes/current
+EnvironmentFile=/etc/cp-notes/app.env
+EnvironmentFile=/etc/cp-notes/backup.env
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/opt/node/bin/node /opt/cp-notes/current/backend/dist/backup.js
+TimeoutStartSec=10min
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/cp-notes
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cp-notes-backup

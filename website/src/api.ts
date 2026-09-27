@@ -11,9 +11,10 @@ import type {
   Problem,
   RootCause,
   Snippet,
+  User,
 } from "@cp-notes/shared";
 
-const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000").replace(/\/$/, "");
+const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "/api").replace(/\/$/, "");
 
 export class ApiError extends Error {
   readonly code: string;
@@ -27,27 +28,69 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<ApiSuccess<T>> {
-  let response: Response;
+const pendingRequests = new Set<AbortController>();
+let accountGeneration = 0;
+
+export function clearSessionData(): void {
+  accountGeneration += 1;
+  for (const controller of pendingRequests) controller.abort();
+  pendingRequests.clear();
+}
+
+export async function request<T>(path: string, options: RequestInit = {}): Promise<ApiSuccess<T>> {
+  const generation = accountGeneration;
+  const controller = new AbortController();
+  pendingRequests.add(controller);
+  const timeout = window.setTimeout(() => controller.abort(new DOMException("Request timed out", "TimeoutError")), 15_000);
+  const signals = options.signal ? [controller.signal, options.signal] : [controller.signal];
+  const signal = AbortSignal.any(signals);
   try {
     const headers = new Headers(options.headers);
-    if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-    response = await fetch(`${API_BASE}${path}`, {
-      ...options,
-      headers,
-    });
-  } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") throw error;
-    throw new ApiError("backend_unavailable", "Could not reach the CP Notes backend. Is it running?", error);
+    if (options.body) headers.set("Content-Type", "application/json");
+    let response: Response;
+    try {
+      response = await fetch(`${API_BASE}${path}`, { ...options, credentials: "same-origin", headers, signal });
+    } catch {
+      if (signal.aborted && signal.reason?.name !== "TimeoutError") throw new DOMException("Request cancelled", "AbortError");
+      throw new ApiError("service_unavailable", "CP Notes could not be reached. Your changes are still here. Check the diary before retrying a save.");
+    }
+    if (generation !== accountGeneration || signal.aborted) throw new DOMException("Request cancelled", "AbortError");
+    if (response.status === 401 && path !== "/auth/login") {
+      clearSessionData();
+      window.dispatchEvent(new Event("cp-notes-session-expired"));
+      throw new ApiError("session_expired", "Your session ended. Sign in again.");
+    }
+    if (response.status === 204) return { data: undefined as T };
+    let payload: ApiSuccess<T> | ApiFailure;
+    try { payload = await response.json() as ApiSuccess<T> | ApiFailure; }
+    catch { throw new ApiError("invalid_response", "CP Notes is temporarily unavailable. Check the diary before retrying a save."); }
+    if (generation !== accountGeneration || signal.aborted) throw new DOMException("Request cancelled", "AbortError");
+    if (!payload || typeof payload !== "object") throw new ApiError("invalid_response", "CP Notes returned an unreadable response.");
+    if ("error" in payload && payload.error && typeof payload.error.message === "string") {
+      throw new ApiError(payload.error.code, payload.error.message, payload.error.details);
+    }
+    if (!response.ok || !("data" in payload)) throw new ApiError("service_unavailable", "CP Notes is temporarily unavailable. Try again shortly.");
+    return payload;
+  } finally {
+    window.clearTimeout(timeout);
+    pendingRequests.delete(controller);
   }
+}
 
-  if (response.status === 204) return { data: undefined as T };
-  const payload = (await response.json()) as ApiSuccess<T> | ApiFailure;
-  if (!response.ok || "error" in payload) {
-    const failure = payload as ApiFailure;
-    throw new ApiError(failure.error.code, failure.error.message, failure.error.details);
-  }
-  return payload;
+export async function getCurrentUser(): Promise<User> {
+  return (await request<User>("/auth/me")).data;
+}
+
+export async function login(email: string, password: string): Promise<User> {
+  return (await request<User>("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) })).data;
+}
+
+export async function logout(): Promise<void> {
+  await request("/auth/logout", { method: "POST" });
+}
+
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  await request("/auth/change-password", { method: "POST", body: JSON.stringify({ currentPassword, newPassword }) });
 }
 
 export interface Paged<T> {

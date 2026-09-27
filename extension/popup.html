@@ -12,6 +12,19 @@
         <span id="site-badge" class="site-badge">Manual</span>
       </header>
 
+      <button id="retry-connection" type="button" hidden>Retry connection</button>
+      <p id="version" class="hint"></p>
+      <form id="login-form">
+        <p>Sign in with the account from your beta invitation. Contact the organizer for a password reset.</p>
+        <label>Email<input id="login-email" type="email" autocomplete="username" required maxlength="254" /></label>
+        <label>Password<input id="login-password" type="password" autocomplete="current-password" required maxlength="128" /></label>
+        <button class="submit" type="submit">Sign in</button>
+        <p id="login-status" class="status" aria-live="polite">Loading account?</p>
+      </form>
+      <div id="account" hidden><p id="account-email"></p><button id="logout" type="button">Sign out and clear drafts</button></div>
+      <p><a id="open-diary" target="_blank" rel="noreferrer">Open diary</a> ? <a id="feedback" target="_blank" rel="noreferrer" hidden>Send feedback</a></p>
+      <div id="capture" hidden>
+      <details><summary>First capture</summary><ol><li>Open a supported problem page.</li><li>Check the detected name and URL.</li><li>Write a note and save it.</li><li>Open your diary to find and edit it.</li></ol></details>
       <nav class="tabs" aria-label="Note type">
         <button type="button" class="active" data-type="pattern">Pattern</button>
         <button type="button" data-type="mistake">Mistake</button>
@@ -27,7 +40,7 @@
           <details>
             <summary>Problem details</summary>
             <div class="details-grid">
-              <label>Platform<select id="problem-platform"><option value="codeforces">Codeforces</option><option value="codechef">CodeChef</option><option value="atcoder">AtCoder</option><option value="other" selected>Other</option></select></label>
+              <label>Platform<select id="problem-platform"><option value="codeforces">Codeforces</option><option value="codechef">CodeChef</option><option value="atcoder">AtCoder</option><option value="leetcode">LeetCode</option><option value="other" selected>Other</option></select></label>
               <label>Rating<input id="problem-rating" inputmode="numeric" type="number" min="0" placeholder="Optional" /></label>
               <label>Contest ID<input id="problem-contest" placeholder="Optional" /></label>
               <label>Problem tags<input id="problem-tags" placeholder="graphs, bfs" /></label>
@@ -61,13 +74,15 @@
         </section>
 
         <p id="form-status" class="status" aria-live="polite"></p>
+        <button id="discard" type="button">Discard this draft</button>
         <button id="submit-button" class="submit" type="submit">Save pattern</button>
       </form>
 
-      <details class="settings">
-        <summary>Backend connection</summary>
+      </div>
+      <details id="settings" class="settings" hidden>
+        <summary>Development connection</summary>
         <div class="settings-row">
-          <label>Local backend URL<input id="backend-url" value="http://localhost:3000" /></label>
+          <label>Local API URL<input id="backend-url" value="http://localhost:3000/api" /></label>
           <button id="save-backend" type="button">Save</button>
         </div>
         <p id="settings-status" class="status" aria-live="polite"></p>

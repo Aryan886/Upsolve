@@ -1,0 +1,33 @@
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import Database from "better-sqlite3";
+import { afterEach, beforeEach, expect, it } from "vitest";
+import { initializeOwner } from "./admin.js";
+import { NotesDatabase } from "./database.js";
+let directory: string;
+beforeEach(async () => { directory = await mkdtemp(join(tmpdir(), "cp-admin-test-")); });
+afterEach(async () => { await rm(directory, { recursive: true, force: true }); });
+it("initializes an explicit owner in a fresh database and refuses reinitialization", async () => {
+  const path = join(directory, "notes.db");
+  await initializeOwner(path, "OWNER@example.com", "test hash");
+  const database = new NotesDatabase(path, { existingOnly: true });
+  expect(database.getUserByEmail("owner@example.com")?.passwordHash).toBe("test hash");
+  database.close();
+  await expect(initializeOwner(path, "other@example.com", "test hash")).rejects.toThrow("already initialized");
+});
+it("backs up schema 1 before assigning its records to the explicitly named owner", async () => {
+  const path = join(directory, "legacy.db");
+  const source = new Database(path);
+  source.exec(await readFile(new URL("./fixtures/schema-v1.sql", import.meta.url), "utf8"));
+  source.exec("INSERT INTO snippets VALUES (27, 'old name', 'cpp', 'old code', '[]', '2026-01-01')");
+  source.close();
+  await initializeOwner(path, "owner@example.com", "test hash");
+  const backups = await readdir(join(directory, "backups"));
+  const backup = new Database(join(directory, "backups", backups.find((file) => file.endsWith(".db"))!), { readonly: true });
+  expect(backup.pragma("user_version", { simple: true })).toBe(1);
+  backup.close();
+  const database = new NotesDatabase(path);
+  expect(database.getSnippet(1, 27).code).toBe("old code");
+  database.close();
+});

@@ -9,6 +9,7 @@ export function cleanPageTitle(title: string, platform: Platform): string {
     codeforces: [/\s*[-–—]\s*Codeforces\s*$/i],
     codechef: [/\s*[-–—|]\s*CodeChef\s*$/i],
     atcoder: [/\s*[-–—]\s*AtCoder\s*$/i],
+    leetcode: [/\s*[-??|]\s*LeetCode\s*$/i],
     other: [],
   };
   return suffixes[platform].reduce((value, suffix) => value.replace(suffix, ""), title).trim();
@@ -20,6 +21,7 @@ export function scrapeDocument(platform: Platform): string {
     codeforces: [".problem-statement .title", ".problem-statement .header .title"],
     codechef: ["h1[data-testid='problem-title']", ".problem-statement h1", "h1"],
     atcoder: ["#task-statement + *", "span.h2", ".h2"],
+    leetcode: ['a[href^="/problems/"][class*="text-title"]', '[data-cy="question-title"]', "h1"],
     other: ["h1"],
   };
   for (const selector of selectors[platform]) {
@@ -48,5 +50,5 @@ export async function getActiveProblemContext(): Promise<ActiveProblemContext | 
     rawName = tab.title ?? "";
   }
 
-  return { ...detected, name: cleanPageTitle(rawName, detected.platform) };
+  return { ...detected, name: cleanPageTitle(rawName || tab.title || "", detected.platform) };
 }
