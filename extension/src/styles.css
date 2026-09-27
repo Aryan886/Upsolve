@@ -1,0 +1,48 @@
+:root {
+  color-scheme: light;
+  --ink: #1f2430;
+  --sub: #5b6472;
+  --line: #e2e5ea;
+  --bg: #fafaf9;
+  --card: #ffffff;
+  --accent: #2f4f7f;
+  --red: #b3261e;
+  --green: #276b45;
+  font-family: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+  color: var(--ink);
+  background: var(--bg);
+}
+* { box-sizing: border-box; }
+body { width: 380px; min-height: 520px; margin: 0; background: var(--bg); line-height: 1.45; }
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: 0.55; }
+:focus-visible { outline: 3px solid rgba(47, 79, 127, 0.25); outline-offset: 1px; }
+.popup-wrap { padding: 20px 18px 18px; }
+.title { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.title h1 { margin: 0; font-size: 1.42rem; letter-spacing: -0.02em; }
+.title p { margin: 1px 0 0; color: var(--sub); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 0.76rem; }
+.site-badge { max-width: 105px; overflow: hidden; border-radius: 999px; padding: 3px 8px; background: #eef0f2; color: var(--sub); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 0.62rem; font-weight: 750; text-overflow: ellipsis; text-transform: capitalize; white-space: nowrap; }
+.tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; margin: 16px 0; padding: 5px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+.tabs button { border: 0; border-radius: 5px; padding: 7px 4px; background: transparent; color: var(--sub); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 0.7rem; font-weight: 700; }
+.tabs button.active { background: var(--accent); color: white; }
+form { display: grid; gap: 14px; }
+.problem-card { display: grid; gap: 9px; padding: 12px; border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 7px; background: var(--card); }
+.section-label { display: flex; justify-content: space-between; color: var(--sub); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 0.63rem; font-weight: 750; letter-spacing: 0.06em; text-transform: uppercase; }
+label { display: grid; gap: 4px; color: var(--sub); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 0.7rem; font-weight: 700; }
+input, select, textarea { width: 100%; border: 1px solid #cfd4dc; border-radius: 5px; padding: 8px 9px; background: white; color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 0.79rem; }
+textarea { resize: vertical; line-height: 1.45; }
+.code-input { font-family: "Cascadia Code", Consolas, monospace; font-size: 0.74rem; tab-size: 2; }
+.hint { font-weight: 400; }
+details summary { cursor: pointer; color: var(--accent); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 0.7rem; font-weight: 700; }
+.details-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 9px; }
+.form-panel { display: grid; gap: 10px; }
+.status { min-height: 1.1em; margin: -3px 0; color: var(--sub); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 0.7rem; }
+.status.error { color: var(--red); }
+.status.success { color: var(--green); }
+.submit { width: 100%; border: 1px solid var(--accent); border-radius: 6px; padding: 9px 12px; background: var(--accent); color: white; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 0.78rem; font-weight: 750; text-transform: capitalize; }
+.settings { margin-top: 15px; padding-top: 12px; border-top: 1px solid var(--line); }
+.settings-row { display: grid; grid-template-columns: 1fr auto; gap: 7px; align-items: end; margin-top: 9px; }
+.settings-row button { border: 1px solid #cfd4dc; border-radius: 5px; padding: 8px 10px; background: white; color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 0.74rem; font-weight: 700; }
+.settings .status { margin-top: 5px; }
+[hidden] { display: none !important; }

@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CP Notes</title>
+  </head>
+  <body>
+    <main class="popup-wrap">
+      <header class="title">
+        <div><h1>CP Notes</h1><p>Capture what is worth remembering.</p></div>
+        <span id="site-badge" class="site-badge">Manual</span>
+      </header>
+
+      <nav class="tabs" aria-label="Note type">
+        <button type="button" class="active" data-type="pattern">Pattern</button>
+        <button type="button" data-type="mistake">Mistake</button>
+        <button type="button" data-type="snippet">Snippet</button>
+        <button type="button" data-type="editorial">Editorial</button>
+      </nav>
+
+      <form id="capture-form">
+        <section id="problem-card" class="problem-card">
+          <div class="section-label"><span>Linked problem</span><span id="detection-status">Optional</span></div>
+          <label>Problem name<input id="problem-name" autocomplete="off" placeholder="e.g. A. Theatre Square" /></label>
+          <label>Problem URL<input id="problem-url" type="url" autocomplete="off" placeholder="https://…" /></label>
+          <details>
+            <summary>Problem details</summary>
+            <div class="details-grid">
+              <label>Platform<select id="problem-platform"><option value="codeforces">Codeforces</option><option value="codechef">CodeChef</option><option value="atcoder">AtCoder</option><option value="other" selected>Other</option></select></label>
+              <label>Rating<input id="problem-rating" inputmode="numeric" type="number" min="0" placeholder="Optional" /></label>
+              <label>Contest ID<input id="problem-contest" placeholder="Optional" /></label>
+              <label>Problem tags<input id="problem-tags" placeholder="graphs, bfs" /></label>
+            </div>
+          </details>
+        </section>
+
+        <section class="form-panel active" data-panel="pattern">
+          <label>Trigger<input id="pattern-trigger" required placeholder="When should this pattern come to mind?" /></label>
+          <label>Core idea<textarea id="pattern-idea" required rows="4" placeholder="The essential observation—no full solution"></textarea></label>
+          <label>Complexity<input id="pattern-complexity" required placeholder="e.g. O(V + E)" /></label>
+          <label>Tags <span class="hint">comma-separated</span><input id="pattern-tags" placeholder="graphs, shortest path" /></label>
+        </section>
+
+        <section class="form-panel" data-panel="mistake" hidden>
+          <label>Root cause<select id="mistake-cause"><option value="misread_constraint">Misread constraint</option><option value="missed_edge_case">Missed edge case</option><option value="wrong_approach">Wrong approach</option><option value="time_management">Time management</option><option value="implementation_bug">Implementation bug</option><option value="other">Other</option></select></label>
+          <label>What actually went wrong?<textarea id="mistake-notes" rows="5" placeholder="Name the root cause, not just the verdict"></textarea></label>
+          <label>Contest ID<input id="mistake-contest" placeholder="Optional" /></label>
+        </section>
+
+        <section class="form-panel" data-panel="snippet" hidden>
+          <label>Name<input id="snippet-name" placeholder="e.g. DSU with path compression" /></label>
+          <label>Language<input id="snippet-language" value="cpp" placeholder="cpp" /></label>
+          <label>Code<textarea id="snippet-code" class="code-input" rows="10" spellcheck="false" placeholder="Paste a small reusable template"></textarea></label>
+          <label>Tags <span class="hint">comma-separated</span><input id="snippet-tags" placeholder="graphs, data structure" /></label>
+        </section>
+
+        <section class="form-panel" data-panel="editorial" hidden>
+          <label>One-line takeaway<textarea id="editorial-line" rows="4" maxlength="1000" placeholder="What single insight unlocked the problem?"></textarea></label>
+          <label>Contest ID<input id="editorial-contest" placeholder="Optional" /></label>
+        </section>
+
+        <p id="form-status" class="status" aria-live="polite"></p>
+        <button id="submit-button" class="submit" type="submit">Save pattern</button>
+      </form>
+
+      <details class="settings">
+        <summary>Backend connection</summary>
+        <div class="settings-row">
+          <label>Local backend URL<input id="backend-url" value="http://localhost:3000" /></label>
+          <button id="save-backend" type="button">Save</button>
+        </div>
+        <p id="settings-status" class="status" aria-live="polite"></p>
+      </details>
+    </main>
+    <script type="module" src="/src/popup.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,26 @@
+{
+  "name": "cp-notes",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "shared",
+    "backend",
+    "website",
+    "extension"
+  ],
+  "scripts": {
+    "dev": "npm run build -w @cp-notes/shared && concurrently -n backend,website -c blue,green \"npm run dev -w @cp-notes/backend\" \"npm run dev -w @cp-notes/website\"",
+    "dev:extension": "npm run build -w @cp-notes/shared && npm run dev -w @cp-notes/extension",
+    "build": "npm run build -w @cp-notes/shared && npm run build -w @cp-notes/backend && npm run build -w @cp-notes/website && npm run build -w @cp-notes/extension",
+    "typecheck": "npm run build -w @cp-notes/shared && npm run typecheck --workspaces --if-present",
+    "test": "npm run build -w @cp-notes/shared && npm run test --workspaces --if-present",
+    "check": "npm run typecheck && npm test && npm run build"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5",
+    "jsdom": "^29.1.1"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
