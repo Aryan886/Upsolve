@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { LoginForm } from "./LoginForm";
 import { login } from "../api";
@@ -24,4 +24,21 @@ it("keeps the email after a failed sign-in and shows the error", async () => {
   fireEvent.submit(screen.getByRole("button", { name: "Sign in" }).closest("form")!);
   expect(await screen.findByRole("alert")).toHaveTextContent("Email or password is incorrect");
   expect(screen.getByLabelText("Email")).toHaveValue("a@example.com");
+});
+
+it("prefills an invited email without persisting or prefilling the password", () => {
+  render(<LoginForm onLogin={vi.fn()} initialEmail="tester@example.com" />);
+  expect(screen.getByLabelText("Email")).toHaveValue("tester@example.com");
+  expect(screen.getByLabelText("Password")).toHaveValue("");
+});
+
+it("ignores a sign-in result after the form was removed", async () => {
+  let finish: (user: { id: number; email: string; createdAt: string }) => void = () => undefined;
+  vi.mocked(login).mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+  const onLogin = vi.fn();
+  const view = render(<LoginForm onLogin={onLogin} />);
+  fireEvent.submit(screen.getByRole("button", { name: "Sign in" }).closest("form")!);
+  view.unmount();
+  await act(async () => { finish({ id: 1, email: "old@example.com", createdAt: "now" }); });
+  expect(onLogin).not.toHaveBeenCalled();
 });

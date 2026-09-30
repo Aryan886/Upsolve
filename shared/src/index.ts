@@ -319,3 +319,13 @@ export const LoginSchema = z.object({ email: EmailSchema, password: z.string().m
 export const ChangePasswordSchema = z.object({ currentPassword: z.string().min(1).max(128), newPassword: PasswordSchema });
 export const UserSchema = z.object({ id: z.number().int().positive(), email: z.email(), createdAt: z.string() });
 export type User = z.infer<typeof UserSchema>;
+
+export const INVITATION_INVALID_MESSAGE = "This invitation is invalid or no longer available. Sign in if you already created your account, or ask the person who invited you for a new link.";
+export const InvitationTokenSchema = z.string().length(43, "This invitation link is malformed.")
+  .regex(/^[A-Za-z0-9_-]+$/, "This invitation link is malformed.");
+export const InvitationInspectSchema = z.strictObject({ token: InvitationTokenSchema });
+export const InvitationAcceptSchema = z.strictObject({ token: InvitationTokenSchema, password: PasswordSchema });
+export const InvitationSchema = z.object({ email: z.email(), expiresAt: z.iso.datetime() });
+export const InvitationAcceptedSchema = z.object({ email: z.email() });
+export type Invitation = z.infer<typeof InvitationSchema>;
+export type InvitationAccepted = z.infer<typeof InvitationAcceptedSchema>;

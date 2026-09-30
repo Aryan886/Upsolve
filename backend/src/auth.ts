@@ -1,6 +1,6 @@
 import { createHash, randomBytes, scrypt, timingSafeEqual } from "node:crypto";
 import { Router, type Request, type Response } from "express";
-import { ChangePasswordSchema, LoginSchema, PasswordSchema, type User } from "@cp-notes/shared";
+import { ChangePasswordSchema, InvitationAcceptSchema, InvitationInspectSchema, INVITATION_INVALID_MESSAGE, LoginSchema, PasswordSchema, type User } from "@cp-notes/shared";
 import type { NotesDatabase } from "./database.js";
 import { AppError } from "./errors.js";
 
@@ -42,6 +42,20 @@ export function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
+export function createThrottle() {
+  const attempts = new Map<string, { count: number; until: number }>();
+  return function throttle(key: string, limit: number, message = "Too many sign-in attempts. Try again in 15 minutes."): void {
+    const now = Date.now();
+    for (const [entry, value] of attempts) if (value.until <= now) attempts.delete(entry);
+    const attempt = attempts.get(key) ?? { count: 0, until: now + 15 * 60_000 };
+    if (attempt.count >= limit || (!attempts.has(key) && attempts.size >= 10_000)) {
+      throw new AppError(429, "too_many_attempts", message);
+    }
+    attempt.count += 1;
+    attempts.set(key, attempt);
+  };
+}
+
 export interface AuthOptions {
   websiteOrigins: string[];
   extensionOrigins: string[];
@@ -69,18 +83,7 @@ export function createAuth(database: NotesDatabase, options: AuthOptions) {
   const cookieName = options.localDevelopment ? "cp_notes_dev" : "__Host-cp_notes";
   const cookieOptions = { httpOnly: true, secure: !options.localDevelopment, sameSite: "lax" as const, path: "/" };
   const lifetime = (options.sessionDays ?? 30) * 86_400_000;
-  const attempts = new Map<string, { count: number; until: number }>();
-
-  function throttle(key: string, limit: number): void {
-    const now = Date.now();
-    for (const [entry, value] of attempts) if (value.until <= now) attempts.delete(entry);
-    const attempt = attempts.get(key) ?? { count: 0, until: now + 15 * 60_000 };
-    if (attempt.count >= limit || (!attempts.has(key) && attempts.size >= 10_000)) {
-      throw new AppError(429, "too_many_attempts", "Too many sign-in attempts. Try again in 15 minutes.");
-    }
-    attempt.count += 1;
-    attempts.set(key, attempt);
-  }
+  const throttle = createThrottle();
 
   function requireWebsiteOrigin(request: Request): void {
     if (!options.websiteOrigins.includes(request.get("origin") ?? "")) {
@@ -118,6 +121,29 @@ export function createAuth(database: NotesDatabase, options: AuthOptions) {
 
   router.post("/login", (request, response) => login(request, response, "website"));
   router.post("/extension-login", (request, response) => login(request, response, "extension"));
+  function limitInvitationRequests(request: Request): void {
+    requireWebsiteOrigin(request);
+    throttle(`invitation-ip:${request.ip ?? "unknown"}`, 40, "Too many invitation requests. Try again in 15 minutes.");
+  }
+
+  router.post("/invitations/inspect", (request, response) => {
+    limitInvitationRequests(request);
+    const input = InvitationInspectSchema.safeParse(request.body);
+    if (!input.success) throw new AppError(400, "validation_error", "The request is invalid");
+    const invitation = database.getInvitation(hashToken(input.data.token));
+    if (!invitation) throw new AppError(400, "invitation_invalid", INVITATION_INVALID_MESSAGE);
+    response.json({ data: invitation });
+  });
+  router.post("/invitations/accept", async (request, response) => {
+    limitInvitationRequests(request);
+    const input = InvitationAcceptSchema.safeParse(request.body);
+    if (!input.success) throw new AppError(400, "validation_error", "The request is invalid");
+    const tokenHash = hashToken(input.data.token);
+    throttle(`invitation-token:${tokenHash}`, 10, "Too many invitation attempts. Try again in 15 minutes.");
+    if (!database.getInvitation(tokenHash)) throw new AppError(400, "invitation_invalid", INVITATION_INVALID_MESSAGE);
+    const passwordHash = await hashPassword(input.data.password);
+    response.status(201).json({ data: database.acceptInvitation(tokenHash, passwordHash) });
+  });
   router.get("/me", (request, response) => response.json({ data: session(request).user }));
   router.post("/logout", (request, response) => {
     const current = session(request);

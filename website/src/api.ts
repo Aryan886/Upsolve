@@ -12,19 +12,24 @@ import type {
   RootCause,
   Snippet,
   User,
+  Invitation,
+  InvitationAccepted,
 } from "@cp-notes/shared";
+import { InvitationSchema, InvitationAcceptedSchema } from "@cp-notes/shared";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "/api").replace(/\/$/, "");
 
 export class ApiError extends Error {
   readonly code: string;
   readonly details?: unknown;
+  readonly status?: number;
 
-  constructor(code: string, message: string, details?: unknown) {
+  constructor(code: string, message: string, details?: unknown, status?: number) {
     super(message);
     this.name = "ApiError";
     this.code = code;
     if (details !== undefined) this.details = details;
+    if (status !== undefined) this.status = status;
   }
 }
 
@@ -67,7 +72,7 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
     if (generation !== accountGeneration || signal.aborted) throw new DOMException("Request cancelled", "AbortError");
     if (!payload || typeof payload !== "object") throw new ApiError("invalid_response", "CP Notes returned an unreadable response.");
     if ("error" in payload && payload.error && typeof payload.error.message === "string") {
-      throw new ApiError(payload.error.code, payload.error.message, payload.error.details);
+      throw new ApiError(payload.error.code, payload.error.message, payload.error.details, response.status);
     }
     if (!response.ok || !("data" in payload)) throw new ApiError("service_unavailable", "CP Notes is temporarily unavailable. Try again shortly.");
     return payload;
@@ -91,6 +96,28 @@ export async function logout(): Promise<void> {
 
 export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
   await request("/auth/change-password", { method: "POST", body: JSON.stringify({ currentPassword, newPassword }) });
+}
+
+export async function inspectInvitation(token: string, signal?: AbortSignal): Promise<Invitation> {
+  const response = await request<unknown>("/auth/invitations/inspect", {
+    method: "POST",
+    body: JSON.stringify({ token }),
+    ...(signal ? { signal } : {}),
+  });
+  const result = InvitationSchema.safeParse(response.data);
+  if (!result.success) throw new ApiError("invalid_response", "CP Notes returned an unreadable invitation response. Try again shortly.");
+  return result.data;
+}
+
+export async function acceptInvitation(token: string, password: string, signal?: AbortSignal): Promise<InvitationAccepted> {
+  const response = await request<unknown>("/auth/invitations/accept", {
+    method: "POST",
+    body: JSON.stringify({ token, password }),
+    ...(signal ? { signal } : {}),
+  });
+  const result = InvitationAcceptedSchema.safeParse(response.data);
+  if (!result.success) throw new ApiError("invalid_response", "CP Notes returned an unreadable account setup response.");
+  return result.data;
 }
 
 export interface Paged<T> {

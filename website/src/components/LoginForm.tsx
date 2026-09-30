@@ -1,11 +1,13 @@
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { User } from "@cp-notes/shared";
 import { changePassword, login } from "../api";
 
-export function LoginForm({ onLogin }: { onLogin: (user: User) => void }) {
+export function LoginForm({ onLogin, initialEmail = "" }: { onLogin: (user: User) => void; initialEmail?: string }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const submitting = useRef(false);
+  const mounted = useRef(false);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     if (submitting.current) return;
@@ -16,16 +18,17 @@ export function LoginForm({ onLogin }: { onLogin: (user: User) => void }) {
     setError("");
     try {
       const user = await login(String(data.get("email")), String(data.get("password")));
+      if (!mounted.current) return;
       form.reset();
       onLogin(user);
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "Sign-in failed. Try again."); }
-    finally { submitting.current = false; setBusy(false); }
+    } catch (caught) { if (mounted.current) setError(caught instanceof Error ? caught.message : "Sign-in failed. Try again."); }
+    finally { submitting.current = false; if (mounted.current) setBusy(false); }
   }
   return <section className="account-card">
     <h2>Sign in to your diary</h2>
-    <p>Use the individual account provided with your beta invitation. Contact the person who invited you for a password reset.</p>
+    <p>Open your private invitation link to choose a password, then sign in here. Use the same email and password in the extension. Contact the person who invited you for a password reset.</p>
     <form onSubmit={(event) => void submit(event)}>
-      <label>Email<input name="email" type="email" autoComplete="username" required maxLength={254} /></label>
+      <label>Email<input name="email" type="email" autoComplete="username" defaultValue={initialEmail} required maxLength={254} /></label>
       <label>Password<input name="password" type="password" autoComplete="current-password" required maxLength={128} /></label>
       {error && <p role="alert" className="inline-error">{error}</p>}
       <button className="button" disabled={busy}>{busy ? "Signing in?" : "Sign in"}</button>
@@ -37,6 +40,8 @@ export function PasswordForm({ onChanged }: { onChanged: () => void }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const submitting = useRef(false);
+  const mounted = useRef(false);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     if (submitting.current) return;
@@ -48,10 +53,11 @@ export function PasswordForm({ onChanged }: { onChanged: () => void }) {
     setError("");
     try {
       await changePassword(String(data.get("currentPassword")), String(data.get("newPassword")));
+      if (!mounted.current) return;
       form.reset();
       onChanged();
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "Password change failed."); }
-    finally { submitting.current = false; setBusy(false); }
+    } catch (caught) { if (mounted.current) setError(caught instanceof Error ? caught.message : "Password change failed."); }
+    finally { submitting.current = false; if (mounted.current) setBusy(false); }
   }
   return <details className="account-card"><summary>Change password</summary>
     <p>Use 12?128 characters. You will need to sign in again on the website and extension.</p>

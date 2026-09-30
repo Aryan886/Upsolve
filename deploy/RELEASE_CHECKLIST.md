@@ -2,14 +2,20 @@
 
 ## Local implementation
 
-- Schema 2: users, hashed sessions, required ownership, private URLs, scoped queries, migration rollback.
+- Schema 3: hashed expiring/single-use invitations added without rewriting users, sessions, notes or ownership; transactional migration/acceptance rollback.
 - Authentication: async scrypt, login throttling/concurrency bound, cookie/bearer separation, origin checks, revocation, hidden-password operator commands.
 - LeetCode canonical URLs/title capture with editable fallback; existing site regressions.
-- Website sign-in/password change/sign-out, stale-request cancellation, onboarding and feedback/version UI.
+- Website invitation setup with in-memory fragment handling, explicit sign-out, uncertain-response recovery and normal sign-in; password change, stale-request cancellation, onboarding and feedback/version UI.
 - Extension fixed production endpoint, trusted local credential storage, scoped serialized drafts, recovery on expiry, duplicate-save guard and ambiguous-save warning.
 - Compiled startup, static website-only hosting, validated configuration, Caddy/systemd files, online backups/upload marker/retention and recovery runbook.
 
 Actual test/build results are recorded below after running the release gate. Prepared configuration is not a verified live deployment.
+
+## Initial Lightsail rollout evidence (2026-09-28)
+
+The owner deployed the original beta on Amazon Linux 2023 at `https://upsolve-aryan.duckdns.org`, using Caddy, systemd and a fresh persistent database. External requests verified the HTTPS homepage, `/health`, and `googleae6bb7febf88fddb.html`; the owner reported the website working. The host reported about 419 MiB usable RAM with swap, rather than the planned 1 GB. Follow the [actual deployment and update runbook](LIGHTSAIL_RUNBOOK.md) for repeatable releases, invitation schema migration, backups, rollback and extension updates.
+
+This initial rollout does not confirm the invitation release is live, that Google cleared its phishing warning, or that S3 backups, restoration, all browser/isolation checks, and store distribution are complete. The broad release gates below remain open where these additional checks are needed.
 
 ## Owner/release gates (pending)
 
@@ -18,6 +24,7 @@ Actual test/build results are recorded below after running the release gate. Pre
 - [ ] Benchmark hashing and memory on the actual 1 GB server under simultaneous logins.
 - [ ] Provision/configure host, firewall, Caddy HTTPS and certificate renewal prerequisites.
 - [ ] Initialize/migrate actual notes with an explicit owner and verified pre-migration backup.
+- [ ] Before any schema-3 server/admin opens schema-2 production data, verify and retain a SQLite-aware backup independently. Test compatible rollback; schema-2 binaries cannot open schema 3.
 - [ ] Configure private encrypted S3, least-privilege uploader, lifecycle and daily timer.
 - [ ] Verify a failed real upload is visible; restore an actual downloaded S3 backup independently.
 - [ ] Test restart, reboot, second release deployment and compatible rollback on the host.
@@ -27,7 +34,9 @@ Actual test/build results are recorded below after running the release gate. Pre
 - [ ] Use two real accounts and direct API requests to verify isolation after deployment.
 - [ ] Confirm the included icons; finish synthetic screenshots, privacy page, store listing/reviewer access and review.
 - [ ] Have one additional technical tester follow onboarding in a fresh browser profile and submit feedback.
+- [ ] Exercise private invitation setup, invalid/reissued/expired links, signed-in visits and an interrupted acceptance in a fresh browser profile; verify HTTPS headers and no automatic replay/login.
 - [ ] Share the reviewed install link with invited testers and run a one-to-two-week trial.
+- [ ] Issue and privately deliver real invitations only after release verification; review restored outstanding invitations before reopening access after recovery.
 
 ## Verification results
 
@@ -47,5 +56,5 @@ Verified on 2026-09-27:
 | Diff review | `git diff --check` passed; no dependency additions; existing user notes database was not opened/migrated |
 | Browser visual/store screenshots | Pending: no browser was connected to the available UI automation tool |
 
-The 68 tests cover 20 shared, 26 backend, 8 website and 14 extension cases. Test accounts/databases use temporary directories. There is no verified AWS deployment, real S3 upload/download, Chrome Web Store submission or completed tester trial. Use the pinned Node 22 runtime for release despite the additional successful Windows check on Node 24.
+The 68 tests cover 20 shared, 26 backend, 8 website and 14 extension cases. These are the historical local results from September 27; test accounts/databases use temporary directories. The initial Lightsail rollout is recorded above. Real S3 upload/download and restoration, Chrome Web Store submission and a completed tester trial remain unverified here. Use the pinned Node 22 runtime for release despite the additional successful Windows check on Node 24.
 

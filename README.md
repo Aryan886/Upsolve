@@ -2,7 +2,9 @@
 
 A private competitive programming diary for invited testers. The Chrome extension captures patterns, mistakes, snippets, and editorial takeaways from LeetCode, Codeforces, CodeChef, AtCoder, or manually entered problems. The website provides search, a timeline, mistake statistics, editing, and deletion.
 
-The AWS beta implementation is local and ready for release verification. **No AWS resources or store listing have been published.** See [deployment and recovery](deploy/README.md), [release checklist](deploy/RELEASE_CHECKLIST.md), and [build plan](AWS_BUILD_PLAN.md).
+The website is running on an Amazon Linux 2023 Lightsail instance at <https://upsolve-aryan.duckdns.org>. Use the [Lightsail deployment and update runbook](deploy/LIGHTSAIL_RUNBOOK.md) for the actual server layout, repeatable updates, backups, rollback, invitations, and extension releases. Local changes reach the site only after deployment. Chrome Web Store publication and live backup/recovery verification remain separate release tasks; see [deployment and recovery](deploy/README.md), [release checklist](deploy/RELEASE_CHECKLIST.md), and [build plan](AWS_BUILD_PLAN.md).
+
+Invitation-only account setup follows the [invitation links implementation plan](INVITATION_LINKS_PLAN.md). Operators issue private, expiring links; testers choose their own passwords and then use ordinary sign-in. There is no public signup or email delivery service.
 
 ## Local setup
 
@@ -15,7 +17,7 @@ npm run admin -- init owner@example.com
 npm run dev
 ```
 
-The admin command prompts invisibly for a 12?128 character password. Never pass a password as a command argument. If a populated schema-1 database exists, `init` first creates a consistent pre-migration backup, then assigns its existing records to this explicitly named owner in a transaction. Stop the old backend before running it. The real database is never used by tests.
+The `init`, `create`, and `reset` commands prompt invisibly for a 12–128 character password. Never pass a password as a command argument. If a populated schema-1 database exists, `init` first creates a consistent pre-migration backup, then assigns its existing records to this explicitly named owner in a transaction. Stop the old backend before running it. The real database is never used by tests.
 
 The API listens on `127.0.0.1:3000`; use the website at `http://localhost:5173`. Vite proxies `/api` to the backend so cookies remain on the website origin. Development also requires authentication. The default database is `backend/data/cp-notes.db`, independent of the current directory. The backend dev/admin scripts explicitly load the root `.env`; production systemd loads its own environment file.
 
@@ -31,6 +33,32 @@ npm run admin -- benchmark
 ```
 
 Reset, disable, and password changes revoke all sessions. Disable keeps notes and does not reactivate on reset. There is no public signup or automated email reset.
+
+## Invitation commands
+
+After database initialization, issue or revoke an invitation without a password prompt:
+
+```powershell
+npm run admin -- invite tester@example.com
+npm run admin -- revoke-invite tester@example.com
+```
+
+`invite` normalizes the email and prints its expiry and private setup link once after saving only the token hash. Share the link privately with the intended tester; possession authorizes setting up that account and does not verify mailbox ownership. Reissuing replaces the old link. Existing accounts, including disabled accounts, cannot be changed through invitations; use the manual reset procedure instead. Revoking a missing invitation is an informative no-op and never changes accounts or sessions.
+
+Links use `APP_ORIGIN` as their website base and expire after 72 hours by default. Optional `INVITATION_HOURS` accepts integers from 1 to 168; changes affect only newly issued links. Production requires an explicit HTTPS origin. HTTP is allowed only with `LOCAL_DEVELOPMENT=true` and a loopback origin. The npm admin script loads the root `.env`; production commands must explicitly load `/etc/cp-notes/app.env` as shown in the [operator guide](deploy/README.md#invitation-operations).
+
+**Before upgrading an existing schema-2 database, take and independently verify a SQLite-aware pre-migration backup before either the new server or any new admin command opens it.** Both automatically migrate to schema 3, including with `existingOnly`. The schema-2 binary rejects schema 3: rollback requires its matching backup and can lose later writes. Never issue an invitation as the first production upgrade step.
+
+## For invited testers
+
+1. Open your private invitation, choose a 12–128 character password, and confirm it.
+2. Sign in to the website with the invited email and your new password.
+3. Follow “Start here” to install the extension and sign in there with the same email and password.
+4. Open a supported problem, capture a note, then find and edit it in your diary.
+
+Opening a link does not consume it. The website removes the invitation from the address bar and keeps it only for the current page; after a refresh, reopen the original link. If already signed in, sign out explicitly before setting up the invited account, or return to your current diary.
+
+If account setup is interrupted or reports an unavailable link after retrying, try ordinary sign-in with the password you just chose. The account may already have been created. Acceptance is never retried automatically. If sign-in fails, ask the person who invited you for a replacement link or a manual password reset. Keep links and passwords out of feedback and screenshots.
 
 ## Development extension
 
@@ -70,17 +98,18 @@ For a separate Linux build, native dependency installation, production start/res
 bash deploy/verify-linux.sh /path/to/CP_notes_mvp
 ```
 
-This uses a temporary copy and test accounts, downloads the pinned official Node binary with a checksum check, installs locked dependencies, builds both release clients with test-only hostnames, prunes development dependencies, and runs `deploy/verify-release.mjs`. Temporary files are retained for inspection; the script never touches the real notes database. See the checklist for browser/HTTPS/S3 checks that require a deployed environment.
+This uses a temporary copy and test accounts, downloads the pinned official Node binary with a checksum check, installs locked dependencies, builds both release clients with test-only hostnames, prunes development dependencies, and runs `deploy/verify-release.mjs`. It exercises the compiled invitation CLI, acceptance, ordinary login, restart persistence, and independent schema-3 backup restoration. Temporary files are retained for inspection; the script never touches the real notes database. See the checklist for browser/HTTPS/S3 checks that require a deployed environment.
 
 ## API and data
 
-Every data route is under `/api` and requires a valid cookie or extension bearer session:
+Every data route is under `/api` and requires a valid cookie or extension bearer session. Login and the two invitation routes are available before authentication, with the required origin protection:
 
 - `/auth/login`, `/auth/extension-login`, `/auth/me`, `/auth/logout`, `/auth/change-password`
+- `POST /auth/invitations/inspect` (`{ token }`) and `POST /auth/invitations/accept` (`{ token, password }`): website-origin-only setup; acceptance returns an email, never a session
 - `/problems`: create/reuse and search private problem metadata
 - `/patterns`, `/mistakes`, `/snippets`, `/editorial`: create, list, edit and delete notes
 - `/mistakes/stats` and `/feed`: private aggregates and timeline
 
-JSON retains `{ "data": ..., "meta": ... }` and `{ "error": { "code": ..., "message": ... } }` envelopes. Ownership comes exclusively from the session. `/health` checks database readiness without returning user data. Schema 2 supports accounts and per-user canonical problem URLs; historical URLs are not bulk rewritten.
+JSON retains `{ "data": ..., "meta": ... }` and `{ "error": { "code": ..., "message": ... } }` envelopes. Ownership comes exclusively from the session. `/health` checks database readiness without returning user data. Schema 3 adds hashed, single-use invitations to existing accounts and per-user canonical problem URLs; historical URLs are not bulk rewritten. Invalid invitations use `400 invitation_invalid`, so they do not expire an existing session.
 
-Deleting a note is permanent; its problem is retained. Do not copy a live WAL database file for backup. Use the SQLite backup command and stopped-app restore procedure in the deployment guide. User export, website capture forms, public signup, offline synchronization, sharing, and automatic imports remain deferred.
+Deleting a note is permanent; its problem is retained. Do not copy a live WAL database file for backup. Use the SQLite backup command and stopped-app restore procedure in the deployment guide. Restoring an older backup can revive outstanding invitations; revoke or reissue affected links before reopening access. User export, website capture forms, public signup, offline synchronization, sharing, and automatic imports remain deferred.

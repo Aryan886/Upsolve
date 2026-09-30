@@ -1,5 +1,7 @@
 # AWS beta deployment and operations
 
+**Updating the existing server? Start with the [Lightsail deployment and update runbook](LIGHTSAIL_RUNBOOK.md).** It records the actual Amazon Linux 2023 deployment at `upsolve-aryan.duckdns.org` and provides commands for backups, per-commit releases, invitation schema migration, verification, rollback, and extension distribution. The Ubuntu setup below is the original bootstrap reference, not the operating system on the existing instance. The S3 and recovery sections remain applicable; do not rerun first-time database initialization during updates.
+
 ## Release dependencies
 
 No paid resources are provisioned by these files. Before provisioning, record the AWS plan, remaining credit balance, Lightsail eligibility, account-plan end date, credit expiry, chosen region, DNS hostname, owner email, feedback form URL and stable extension ID. Check current [Lightsail pricing](https://aws.amazon.com/lightsail/pricing/) and [credit terms](https://aws.amazon.com/free/terms/) in the actual account. Billing alerts are not a spending cap. Do not upgrade the account or select a larger instance implicitly.
@@ -32,6 +34,8 @@ DATABASE_PATH=/var/lib/cp-notes/cp-notes.db
 APP_ORIGIN=https://YOUR_HOSTNAME
 EXTENSION_ORIGINS=chrome-extension://YOUR_32_LETTER_ID
 SESSION_DAYS=30
+# Optional operator setting for newly issued invitations (1–168 hours):
+# INVITATION_HOURS=72
 ```
 
 `APP_ORIGIN` has no path or trailing slash. Configure each technical tester's unpacked ID explicitly if no common manifest key exists. CORS and IDs are not authentication. Production Node reads the environment supplied by systemd, not a repository `.env`.
@@ -67,11 +71,30 @@ Before the **first** startup, initialize the database using the compiled operato
 sudo -u cp-notes env DATABASE_PATH=/var/lib/cp-notes/cp-notes.db /opt/node/bin/node /opt/cp-notes/releases/VERSION/backend/dist/admin.js init owner@example.com
 ```
 
-For existing schema-1 notes, transfer a **consistent** backup into the persistent path with owner `cp-notes`, then run the same `init` command. Stop all old processes that can write this file. It prompts for a hidden password, backs up under `/var/lib/cp-notes/backups/pre-migration-*`, and performs a transactional migration preserving IDs, links and contents. It refuses an already initialized schema-2 database. Upload that pre-migration backup separately under `pre-migration/<release>/`; keep it until the beta's retention decision is recorded.
+For existing schema-1 notes, transfer a **consistent** backup into the persistent path with owner `cp-notes`, then run the same `init` command. Stop all old processes that can write this file. It prompts for a hidden password, backs up under `/var/lib/cp-notes/backups/pre-migration-*`, and performs the sequential ownership/invitation migrations preserving IDs, links and contents. It refuses an already initialized schema-2 or schema-3 database. Upload that pre-migration backup separately under `pre-migration/<release>/`; keep it until the beta's retention decision is recorded.
+
+For a schema-2 upgrade, **before the new server or any new admin CLI opens the real file**, stop the old app and create a SQLite-aware pre-migration backup using the previous release's backup workflow. Verify integrity/foreign keys and restore it independently with the matching release, retain it deliberately, and confirm its private off-server copy. Opening with `existingOnly` still applies the schema-3 migration. Do not use `invite` as the first upgrade step. Schema-2-to-3 DDL/version changes are transactional and preserve existing tables; this does not replace the backup requirement.
 
 For accounts after initialization, substitute `create`, `reset`, or `disable` for `init`. Passwords never belong in arguments, environment files, shell history or Vite values. `disable` retains data and revokes sessions; resetting a disabled account does not enable it. The operator handles password reset requests manually. Run `admin.js benchmark` on the actual 1 GB host and record time/RSS under two simultaneous logins. The configured scrypt profile is N=32768, r=8, p=3, with 64 MiB max per job and at most two jobs. It follows an [OWASP scrypt profile](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html#scrypt) using [Node's asynchronous crypto API](https://nodejs.org/docs/latest-v22.x/api/crypto.html#cryptoscryptpassword-salt-keylen-options-callback). Do not lower the cost to conceal memory pressure.
 
-Create `/opt/cp-notes/current` pointing to the verified release and start `cp-notes.service`. Check `curl --fail http://127.0.0.1:3000/health`, HTTPS login, extension save and website read/edit. Then enable the service at boot. Record schema compatibility: this release reads/writes **schema 2**; the original app only supports schema 1.
+Create `/opt/cp-notes/current` pointing to the verified release and start `cp-notes.service`. Check `curl --fail http://127.0.0.1:3000/health`, HTTPS login, extension save and website read/edit. Then enable the service at boot. Record schema compatibility: this release reads/writes **schema 3**; the preceding beta supports at most schema 2 and the original app supports schema 1.
+
+## Invitation operations
+
+After migration/startup verification, issue a private invitation through the compiled CLI. The interactive CLI does not inherit systemd's environment; explicitly load the protected runtime file:
+
+```bash
+sudo -u cp-notes /opt/node/bin/node --env-file=/etc/cp-notes/app.env /opt/cp-notes/current/backend/dist/admin.js invite tester@example.com
+sudo -u cp-notes /opt/node/bin/node --env-file=/etc/cp-notes/app.env /opt/cp-notes/current/backend/dist/admin.js revoke-invite tester@example.com
+```
+
+Neither command prompts for a password or accepts an additional password/token argument. The database must already exist and be initialized. `invite` validates and normalizes the email, validates `APP_ORIGIN` and optional `INVITATION_HOURS`, then stores only a SHA-256 hash of a random 32-byte token. The output contains the fixed email, authoritative expiry and `https://YOUR_HOSTNAME/#invite=<random-token>` once, after commit. Keep that output out of persistent logs, tickets, screenshots and source control. Deliver it privately to the intended person: possession permits account setup and is not proof of mailbox ownership.
+
+Default expiry is 72 hours; `INVITATION_HOURS` permits 1–168 integer hours and applies only to new invitations. `APP_ORIGIN` is the link base and production requires HTTPS. Explicit local development permits loopback HTTP only. Reissuing for the same email immediately invalidates the old link; use replacement after output failure. Revoke reports whether an invitation existed, without touching accounts, notes, passwords or sessions. Existing users, including disabled ones, are rejected; handle their password resets with the existing `reset` command and do not reactivate them through invitations.
+
+The tester opens the link, chooses and confirms a 12–128 character password, signs in to the website, follows “Start here” to install the extension, and signs in there with the same credentials. Opening/inspecting a link never consumes it. The fragment is removed immediately and retained only in page memory; refresh requires reopening the original link. A signed-in tester must explicitly sign out or return to the current diary. There is no automated email delivery, public registration or automatic login after acceptance.
+
+If acceptance is interrupted, the account may already exist. Tell the tester to sign in with the password just chosen before requesting another link; do not automatically replay acceptance. Invalid or used links provide the same recovery guidance. If sign-in fails, provide a replacement or the manual reset procedure as appropriate. Invitations cannot access notes or serve as login/reset credentials.
 
 ## Repeatable updates and rollback
 
@@ -80,7 +103,7 @@ Create `/opt/cp-notes/current` pointing to the verified release and start `cp-no
 3. Stop the app if migrating or replacing the database. Never hold an async operation inside a SQLite transaction. Only the explicit initialization command can assign legacy ownership.
 4. Record the old link target. Create a new symlink next to `current`, then atomically replace `current` with `mv -Tf` on Linux. Restart the systemd service.
 5. Verify health, login and a real create/read/edit flow. Confirm an existing note remains. Keep the previous release and its schema number. Test reboot and a second release before inviting all testers.
-6. A code-only rollback is allowed only if the previous version supports the current schema. Otherwise stop writes, restore a matching backup using the procedure below, and switch to its matching app version. **Restoring loses writes after the backup.** Obtain the owner's decision for that production data loss.
+6. A code-only rollback is allowed only if the previous version supports the current schema. The schema-2 binary rejects schema 3: stop writes, restore the pre-migration schema-2 backup using the procedure below, and switch to its matching app version. **Restoring loses writes after the backup**, including newly accepted accounts. Obtain the owner's decision for that production data loss.
 
 Never use an absent database as a reason to initialize an empty replacement. Production deliberately fails on missing/uninitialized database paths.
 
@@ -119,11 +142,11 @@ First download an uploaded backup with operator credentials into a **separate** 
 
 For production recovery:
 
-1. Schedule downtime and explain loss of post-backup writes. Stop **both** app and backup timer; wait for any active backup service to finish. Confirm no process has the database open.
+1. Schedule downtime and explain loss of post-backup writes. Keep this site's public ingress blocked or in maintenance mode until credential cleanup and local verification finish. Stop **both** app and backup timer; wait for any active backup service to finish. Confirm no process has the database open.
 2. Preserve the current database **and adjacent `-wal`/`-shm` files together** in a timestamped quarantine directory. Never leave old WAL files beside a restored database. Do not delete your only recoverable copy.
 3. Verify the downloaded file in isolation with `PRAGMA integrity_check` (`ok`) and `PRAGMA foreign_key_check` (no rows), then place it at `/var/lib/cp-notes/cp-notes.db`, owned by `cp-notes:cp-notes`, mode `0600`. Use an atomic rename from a temporary file on the same filesystem after verification.
-4. Select a release compatible with the restored schema, start the app, inspect logs, and check health/login/search and the restored note counts and ownership.
-5. Old backups can restore old passwords and sessions. Reset affected accounts before reopening access if recovery followed a credential incident. Re-enable the backup timer and verify a new successful upload.
+4. Select a release compatible with the restored schema. While public access remains closed, use its operator commands to revoke or reissue affected invitations and reset affected accounts if recovery followed a credential incident. Old backups can restore old passwords, sessions and outstanding invitations, including links consumed or revoked after the backup. Restoring an invitation does not extend its original expiry.
+5. Start the app with public ingress still closed, inspect logs, and check loopback health/login/search, restored note counts and ownership. Reopen public access only after these checks and credential cleanup pass. Re-enable the backup timer and verify a new successful upload.
 
 ## Monitoring and beta support
 

@@ -108,7 +108,7 @@ export function createApp(options: CreateAppOptions): { app: express.Express; cl
     next();
   });
   api.use(cors({ origin: allowedOrigins([...origins, ...extensionOrigins]), credentials: true }));
-  api.use((_request, response, next) => { response.set("Cache-Control", "no-store"); next(); });
+  app.use("/api", (_request, response, next) => { response.set("Cache-Control", "no-store"); next(); });
   app.use(express.json({ limit: "256kb" }));
 
   app.get("/health", (_request, response) => {

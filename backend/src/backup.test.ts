@@ -2,6 +2,7 @@ import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, expect, it } from "vitest";
+import Database from "better-sqlite3";
 import { NotesDatabase } from "./database.js";
 import { createBackup, runBackup } from "./backup.js";
 
@@ -23,6 +24,46 @@ it("restores a live WAL backup with sessions, notes, search and ownership", asyn
       expect(restored.listPatterns(1, { page: 1, limit: 20, query: "saved" }).meta.total).toBe(1);
       expect(restored.listPatterns(2, { page: 1, limit: 20 }).meta.total).toBe(0);
     } finally { restored.close(); }
+  } finally { source.close(); }
+});
+
+it("restores schema-3 invitations independently and revokes links revived by an older backup", async () => {
+  const sourcePath = join(directory, "source.db");
+  const source = new NotesDatabase(sourcePath);
+  const expiresAt = new Date(Date.now() + 60_000).toISOString();
+  try {
+    const owner = source.createUser("owner@example.com", "owner hash");
+    source.createPattern(owner.id, { trigger: "saved before backup", coreIdea: "idea", complexity: "O(1)" });
+    source.issueInvitation("accepted@example.com", "accepted invitation hash", expiresAt);
+    source.issueInvitation("revoked@example.com", "revoked invitation hash", expiresAt);
+    const backupPath = await createBackup(sourcePath, join(directory, "backups"));
+    const snapshot = new Database(backupPath, { readonly: true, fileMustExist: true });
+    try {
+      expect(snapshot.pragma("user_version", { simple: true })).toBe(3);
+      expect(snapshot.pragma("integrity_check", { simple: true })).toBe("ok");
+      expect(snapshot.pragma("foreign_key_check")).toEqual([]);
+    } finally { snapshot.close(); }
+
+    source.acceptInvitation("accepted invitation hash", "new user hash");
+    expect(source.revokeInvitation("revoked@example.com")).toBe(true);
+    expect(source.getInvitation("accepted invitation hash")).toBeNull();
+    expect(source.getInvitation("revoked invitation hash")).toBeNull();
+
+    const restored = new NotesDatabase(backupPath, { existingOnly: true });
+    try {
+      expect(restored.getUserByEmail("owner@example.com")?.passwordHash).toBe("owner hash");
+      expect(restored.listPatterns(owner.id, { page: 1, limit: 20, query: "saved before backup" }).meta.total).toBe(1);
+      expect(restored.getUserByEmail("accepted@example.com")).toBeNull();
+      expect(restored.getInvitation("accepted invitation hash")).toEqual({ email: "accepted@example.com", expiresAt });
+      expect(restored.getInvitation("revoked invitation hash")).toEqual({ email: "revoked@example.com", expiresAt });
+      expect(restored.revokeInvitation("accepted@example.com")).toBe(true);
+      expect(restored.revokeInvitation("revoked@example.com")).toBe(true);
+      expect(restored.getInvitation("accepted invitation hash")).toBeNull();
+      expect(restored.getInvitation("revoked invitation hash")).toBeNull();
+    } finally { restored.close(); }
+
+    expect(source.getUserByEmail("accepted@example.com")?.passwordHash).toBe("new user hash");
+    expect(source.listPatterns(owner.id, { page: 1, limit: 20 }).meta.total).toBe(1);
   } finally { source.close(); }
 });
 

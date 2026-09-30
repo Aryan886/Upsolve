@@ -25,3 +25,22 @@ it("serves only public assets and keeps API failures JSON", async () => {
 it("fails startup without the website build", () => {
   expect(() => createApp({ databasePath: ":memory:", websiteDirectory: join(tmpdir(), "cp-notes-absent-build") })).toThrow("Built website is missing");
 });
+
+it("keeps invitation parser errors uncached and applies security headers", async () => {
+  const context = createApp({ databasePath: ":memory:" });
+  try {
+    for (const action of ["inspect", "accept"]) {
+      const path = `/api/auth/invitations/${action}`;
+      const malformed = await request(context.app).post(path).set("Origin", "http://localhost:5173")
+        .set("Content-Type", "application/json").send("{").expect(400)
+        .expect("Cache-Control", "no-store").expect("Referrer-Policy", "no-referrer")
+        .expect("X-Content-Type-Options", "nosniff");
+      expect(malformed.body).toEqual({ error: { code: "invalid_json", message: "The request body is not valid JSON" } });
+      const oversized = await request(context.app).post(path).set("Origin", "http://localhost:5173")
+        .send({ token: "a".repeat(300_000) }).expect(413)
+        .expect("Cache-Control", "no-store").expect("Referrer-Policy", "no-referrer")
+        .expect("X-Content-Type-Options", "nosniff");
+      expect(oversized.body).toEqual({ error: { code: "body_too_large", message: "The entry is too large" } });
+    }
+  } finally { context.close(); }
+});

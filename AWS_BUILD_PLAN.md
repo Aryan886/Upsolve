@@ -6,6 +6,8 @@ Prepared: 2026-09-27.
 Audience: approximately 10 invited testers.
 Purpose: publish a useful beta, collect feedback, and keep development and operating costs small.
 
+Approved scope addendum (2026-09-28): [invitation links implementation plan](INVITATION_LINKS_PLAN.md) adds operator-issued account setup links so testers can choose their own passwords. Local implementation and verification are recorded there and in the [release checklist](deploy/RELEASE_CHECKLIST.md); actual rollout remains pending. This extends manual account creation without enabling public registration or automated email delivery.
+
 This document is the implementation checklist. Creating it does not deploy the app, create AWS resources, migrate the existing database, or change application behavior.
 
 ## 1. Release objective

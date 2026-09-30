@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import {
   ROOT_CAUSES,
+  INVITATION_INVALID_MESSAGE,
   detectProblemPage,
   type User,
   type Editorial,
@@ -120,7 +121,7 @@ export class NotesDatabase {
 
   private migrate(legacyOwner?: { email: string; passwordHash: string }): void {
     const version = this.db.pragma("user_version", { simple: true }) as number;
-    if (version > 2) {
+    if (version > 3) {
       throw new AppError(500, "database_too_new", `Database schema version ${version} is not supported`);
     }
     if (version === 0) {
@@ -184,6 +185,21 @@ export class NotesDatabase {
       })();
     }
     if (version < 2) this.migrateOwnership(legacyOwner);
+    if (version < 3) this.migrateInvitations();
+  }
+
+  private migrateInvitations(): void {
+    this.db.transaction(() => {
+      this.db.exec(`
+        CREATE TABLE invitations (
+          email TEXT PRIMARY KEY NOT NULL,
+          token_hash TEXT NOT NULL UNIQUE,
+          created_at TEXT NOT NULL,
+          expires_at TEXT NOT NULL
+        );
+      `);
+      this.db.pragma("user_version = 3");
+    })();
   }
 
   private migrateOwnership(owner?: { email: string; passwordHash: string }): void {
@@ -249,6 +265,54 @@ export class NotesDatabase {
   getUserByEmail(email: string): (User & { passwordHash: string; active: boolean }) | null {
     const row = this.db.prepare("SELECT * FROM users WHERE email = ?").get(email.trim().toLowerCase()) as Row | undefined;
     return row ? { id: Number(row.id), email: String(row.email), createdAt: String(row.created_at), passwordHash: String(row.password_hash), active: row.active === 1 } : null;
+  }
+
+  issueInvitation(email: string, tokenHash: string, expiresAt: string): { email: string; expiresAt: string } {
+    const normalized = email.trim().toLowerCase();
+    return this.db.transaction(() => {
+      if (this.getUserByEmail(normalized)) {
+        throw new AppError(409, "account_exists", "An account with this email already exists. Use reset or contact the operator instead.");
+      }
+      this.db.prepare(`INSERT INTO invitations (email, token_hash, created_at, expires_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(email) DO UPDATE SET token_hash = excluded.token_hash,
+          created_at = excluded.created_at, expires_at = excluded.expires_at`)
+        .run(normalized, tokenHash, new Date().toISOString(), expiresAt);
+      return { email: normalized, expiresAt };
+    }).immediate();
+  }
+
+  getInvitation(tokenHash: string): { email: string; expiresAt: string } | null {
+    const row = this.db.prepare(`SELECT email, expires_at FROM invitations
+      WHERE token_hash = ? AND expires_at > ?
+        AND NOT EXISTS (SELECT 1 FROM users WHERE users.email = invitations.email)`)
+      .get(tokenHash, new Date().toISOString()) as Row | undefined;
+    return row ? { email: String(row.email), expiresAt: String(row.expires_at) } : null;
+  }
+
+  revokeInvitation(email: string): boolean {
+    return this.db.prepare("DELETE FROM invitations WHERE email = ?").run(email.trim().toLowerCase()).changes === 1;
+  }
+
+  acceptInvitation(tokenHash: string, passwordHash: string): { email: string } {
+    const invalid = () => new AppError(400, "invitation_invalid", INVITATION_INVALID_MESSAGE);
+    try {
+      return this.db.transaction(() => {
+        const invitation = this.getInvitation(tokenHash);
+        if (!invitation) throw invalid();
+        this.createUser(invitation.email, passwordHash);
+        const result = this.db.prepare("DELETE FROM invitations WHERE email = ? AND token_hash = ?")
+          .run(invitation.email, tokenHash);
+        if (result.changes !== 1) throw invalid();
+        return { email: invitation.email };
+      }).immediate();
+    } catch (error) {
+      if (error instanceof AppError && error.code === "account_exists") throw invalid();
+      if (error instanceof Database.SqliteError && error.code === "SQLITE_CONSTRAINT_UNIQUE" && error.message.includes("users.email")) {
+        throw invalid();
+      }
+      throw error;
+    }
   }
 
   setPassword(userId: number, passwordHash: string, expectedHash?: string): void {

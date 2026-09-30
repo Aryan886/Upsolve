@@ -11,7 +11,7 @@ function integer(value: string | undefined, fallback: number, label: string, max
   return parsed;
 }
 
-export function readConfig(environment: NodeJS.ProcessEnv) {
+export function readAppOrigin(environment: NodeJS.ProcessEnv): string {
   const production = environment.NODE_ENV === "production";
   if (environment.NODE_ENV && !["development", "production", "test"].includes(environment.NODE_ENV)) throw new Error("NODE_ENV must be development, production or test");
   if (environment.LOCAL_DEVELOPMENT && !["true", "false"].includes(environment.LOCAL_DEVELOPMENT)) throw new Error("LOCAL_DEVELOPMENT must be true or false");
@@ -24,6 +24,21 @@ export function readConfig(environment: NodeJS.ProcessEnv) {
     throw new Error("APP_ORIGIN must be an origin without path, credentials or trailing slash; production requires HTTPS");
   }
   if (localDevelopment && !["localhost", "127.0.0.1"].includes(url.hostname)) throw new Error("Local development requires a loopback APP_ORIGIN");
+  return appOrigin;
+}
+
+export function readInvitationConfig(environment: NodeJS.ProcessEnv): { appOrigin: string; invitationHours: number } {
+  const appOrigin = readAppOrigin(environment);
+  if (new URL(appOrigin).protocol !== "https:" && environment.LOCAL_DEVELOPMENT !== "true") {
+    throw new Error("Invitation links require HTTPS, or explicit LOCAL_DEVELOPMENT=true with a loopback APP_ORIGIN");
+  }
+  return { appOrigin, invitationHours: integer(environment.INVITATION_HOURS, 72, "INVITATION_HOURS", 168) };
+}
+
+export function readConfig(environment: NodeJS.ProcessEnv) {
+  const production = environment.NODE_ENV === "production";
+  const localDevelopment = environment.LOCAL_DEVELOPMENT === "true";
+  const appOrigin = readAppOrigin(environment);
   const extensionOrigins = (environment.EXTENSION_ORIGINS ?? "").split(",").map((value) => value.trim()).filter(Boolean);
   if (extensionOrigins.some((origin) => !/^chrome-extension:\/\/[a-p]{32}$/.test(origin))) throw new Error("EXTENSION_ORIGINS must contain comma-separated Chrome extension origins");
   if (production && !extensionOrigins.length) throw new Error("Configure EXTENSION_ORIGINS before production startup");

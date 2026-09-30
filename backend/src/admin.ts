@@ -2,12 +2,13 @@ import { existsSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { emitKeypressEvents } from "node:readline";
+import { randomBytes } from "node:crypto";
 import Database from "better-sqlite3";
 import { EmailSchema } from "@cp-notes/shared";
-import { hashPassword } from "./auth.js";
+import { hashPassword, hashToken } from "./auth.js";
 import { createBackup } from "./backup.js";
 import { NotesDatabase } from "./database.js";
-import { defaultDatabasePath } from "./config.js";
+import { defaultDatabasePath, readInvitationConfig } from "./config.js";
 
 function readPassword(label: string): Promise<string> {
   if (!process.stdin.isTTY) throw new Error("Use an interactive terminal for the hidden password prompt");
@@ -41,7 +42,7 @@ export async function initializeOwner(path: string, email: string, passwordHash:
     const source = new Database(path, { readonly: true, fileMustExist: true });
     try {
       const version = Number(source.pragma("user_version", { simple: true }));
-      if (version >= 2) throw new Error("Database is already initialized. Use create, reset, or disable.");
+      if (version >= 2) throw new Error("Database is already initialized. Use invite, create, reset, or disable.");
     } finally { source.close(); }
     const backup = await createBackup(path, resolve(dirname(path), "backups"), "pre-migration");
     console.log(`Pre-migration backup completed: ${backup}`);
@@ -51,10 +52,38 @@ export async function initializeOwner(path: string, email: string, passwordHash:
   database.close();
 }
 
-async function main(): Promise<void> {
-  const [command, rawEmail, ...extra] = process.argv.slice(2);
-  if (!command || !["init", "create", "reset", "disable", "benchmark"].includes(command) || extra.length) {
-    throw new Error("Usage: admin <init|create|reset|disable> <email>, or admin benchmark. Passwords are prompted, never arguments.");
+function writeInvitation(message: string): Promise<void> {
+  return new Promise((resolveOutput, reject) => {
+    function fail(error: Error): void {
+      reject(new Error("Invitation output failed. Issue a replacement invitation before sharing it.", { cause: error }));
+    }
+    function onError(error: Error): void {
+      process.stdout.removeListener("error", onError);
+      fail(error);
+    }
+    process.stdout.once("error", onError);
+    try {
+      process.stdout.write(`${message}\n`, (error) => {
+        // A failed write also emits an error event; retain its listener until then.
+        if (error) { fail(error); return; }
+        process.stdout.removeListener("error", onError);
+        resolveOutput();
+      });
+    } catch (error) {
+      process.stdout.removeListener("error", onError);
+      fail(error instanceof Error ? error : new Error("Unknown output error"));
+    }
+  });
+}
+
+export async function runAdmin(
+  argumentsList: string[],
+  environment: NodeJS.ProcessEnv = process.env,
+  outputInvitation: (message: string) => Promise<void> = writeInvitation,
+): Promise<void> {
+  const [command, rawEmail, ...extra] = argumentsList;
+  if (!command || !["init", "create", "reset", "disable", "benchmark", "invite", "revoke-invite"].includes(command) || extra.length) {
+    throw new Error("Usage: admin <init|create|reset|disable|invite|revoke-invite> <email>, or admin benchmark. Passwords and tokens are never arguments.");
   }
   if (command === "benchmark") {
     if (rawEmail) throw new Error("benchmark takes no arguments");
@@ -64,9 +93,33 @@ async function main(): Promise<void> {
     return;
   }
   const email = EmailSchema.parse(rawEmail);
-  const path = resolve(process.env.DATABASE_PATH ?? defaultDatabasePath);
+  const path = resolve(environment.DATABASE_PATH ?? defaultDatabasePath);
+  if (command === "invite") {
+    const config = readInvitationConfig(environment);
+    const token = randomBytes(32).toString("base64url");
+    const database = new NotesDatabase(path, { existingOnly: true });
+    let invitation: { email: string; expiresAt: string };
+    try {
+      if (database.getUserByEmail(email)) {
+        throw new Error("An account with this email already exists, including disabled accounts. Use reset for an existing account.");
+      }
+      const expiresAt = new Date(Date.now() + config.invitationHours * 3_600_000).toISOString();
+      invitation = database.issueInvitation(email, hashToken(token), expiresAt);
+    } finally { database.close(); }
+    const link = `${config.appOrigin}/#invite=${token}`;
+    await outputInvitation(`Invitation for ${invitation.email}\nExpires: ${invitation.expiresAt}\nPrivate setup link: ${link}\nShare privately with the intended tester. Reissuing replaces this link.`);
+    return;
+  }
+  if (command === "revoke-invite") {
+    const database = new NotesDatabase(path, { existingOnly: true });
+    try {
+      const removed = database.revokeInvitation(email);
+      console.log(removed ? `Invitation revoked for ${email}` : `No outstanding invitation for ${email}`);
+    } finally { database.close(); }
+    return;
+  }
   let passwordHash = "";
-  if (command !== "disable") {
+  if (["init", "create", "reset"].includes(command)) {
     const password = await readPassword("Password (12–128 characters): ");
     if (password !== await readPassword("Confirm password: ")) throw new Error("Passwords did not match");
     passwordHash = await hashPassword(password);
@@ -88,7 +141,7 @@ async function main(): Promise<void> {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main().catch((error: unknown) => {
+  runAdmin(process.argv.slice(2)).catch((error: unknown) => {
     console.error("Account command failed:", error instanceof Error ? error.message : "Unknown error");
     process.exitCode = 1;
   });
