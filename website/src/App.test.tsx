@@ -56,6 +56,19 @@ it("keeps normal visits on the existing login path", async () => {
   await screen.findByRole("button", { name: "Sign in" });
   expect(inspectInvitation).not.toHaveBeenCalled();
   expect(acceptInvitation).not.toHaveBeenCalled();
+  expect(screen.getByRole("link", { name: "Privacy policy" })).toHaveAttribute("href", "/privacy");
+});
+
+it.each(["/privacy", "/privacy/"])("shows the public policy at %s without checking a session or invitation", (path) => {
+  window.history.replaceState(null, "", path);
+  render(<App initialInvitation={{ token }} />);
+  expect(screen.getByRole("heading", { name: "Privacy policy" })).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "aryankhade80@gmail.com" })).toHaveAttribute("href", "mailto:aryankhade80@gmail.com");
+  expect(screen.getByRole("link", { name: "7219283196" })).toHaveAttribute("href", "tel:7219283196");
+  expect(screen.getByRole("link", { name: "Return to CP Notes" })).toHaveAttribute("href", "/");
+  expect(getCurrentUser).not.toHaveBeenCalled();
+  expect(inspectInvitation).not.toHaveBeenCalled();
+  expect(screen.queryByRole("button", { name: "Sign in" })).not.toBeInTheDocument();
 });
 
 it("waits until session discovery finishes even after its real 401 event", async () => {

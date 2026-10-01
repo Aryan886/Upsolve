@@ -6,6 +6,8 @@ The website is running on an Amazon Linux 2023 Lightsail instance at <https://up
 
 Invitation-only account setup follows the [invitation links implementation plan](INVITATION_LINKS_PLAN.md). Operators issue private, expiring links; testers choose their own passwords and then use ordinary sign-in. There is no public signup or email delivery service.
 
+The website includes a public `/privacy` page, linked from the footer and available without an account or authentication request. Its source is `website/src/pages/PrivacyPage.tsx`. Deploy both the backend route and website build, then verify `/privacy` in a signed-out browser before entering `https://upsolve-aryan.duckdns.org/privacy` in the Chrome Web Store. Local implementation does not make that URL live. Review the policy whenever contact details, providers, data handling, or backup retention change.
+
 ## Local setup
 
 Use the pinned Node **22.23.3** and bundled npm **10.9.9** (`.nvmrc`). Linux installations also need Python 3, make, and a C++ compiler for better-sqlite3. Do not copy `node_modules` between Windows and Linux.

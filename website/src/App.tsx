@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { FeedPage } from "./pages/FeedPage";
 import { MistakesPage } from "./pages/MistakesPage";
 import { SearchPage } from "./pages/SearchPage";
+import { PrivacyPage } from "./pages/PrivacyPage";
 
 type Page = "feed" | "mistakes" | "patterns" | "snippets" | "editorial";
 
@@ -55,6 +56,11 @@ function Diary() {
 
 
 export default function App({ initialInvitation = null }: { initialInvitation?: InvitationEntry | null }) {
+  if (window.location.pathname === "/privacy" || window.location.pathname === "/privacy/") return <PrivacyPage />;
+  return <AccountApp initialInvitation={initialInvitation} />;
+}
+
+function AccountApp({ initialInvitation }: { initialInvitation: InvitationEntry | null }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -168,6 +174,7 @@ export default function App({ initialInvitation = null }: { initialInvitation?: 
       onSignIn={(email, notice) => { if (generation === sessionGeneration.current) showSignIn(email, notice); }} />
       : <LoginForm key={loginEmail} initialEmail={loginEmail} onLogin={(nextUser) => { if (generation === sessionGeneration.current) accountChanged(nextUser); }} />)}
     <footer>CP Notes v{import.meta.env.VITE_APP_VERSION ?? "0.1.0"} ? Capture with the extension; review here.
+      {" · "}<a href="/privacy">Privacy policy</a>
       {feedback && <> ? <a href={feedback} target="_blank" rel="noreferrer">Send feedback</a></>}
     </footer>
   </div>;

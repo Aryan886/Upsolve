@@ -139,3 +139,7 @@ footer { margin-top: 58px; padding-top: 18px; border-top: 1px solid var(--line);
 .account-card summary { cursor: pointer; font-weight: 600; }
 .account-card li { margin: .6rem 0; }
 .wrap .wrap { padding: 0; }
+
+.privacy-policy { margin-top: 32px; overflow-wrap: anywhere; }
+.privacy-policy h2 { margin: 28px 0 8px; font-size: 1.25rem; }
+.privacy-policy li { margin-bottom: 10px; }

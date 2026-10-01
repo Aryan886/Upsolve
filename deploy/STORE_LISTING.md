@@ -1,6 +1,6 @@
 # Unlisted Chrome Web Store release preparation
 
-Status: draft copy; no listing submitted. Final hostname, extension ID, install link, privacy URL, organizer contact and reviewer account must be supplied by the owner.
+Status: prepared copy; store submission is not verified here. The public privacy page is implemented locally; deployment and signed-out access at its final URL still need verification. Confirm the uploaded extension ID, install link and reviewer account before submission.
 
 ## Listing copy
 
@@ -23,7 +23,9 @@ Status: draft copy; no listing submitted. Final hostname, extension ID, install 
 
 CP Notes sends your account email, selected problem metadata and the notes/code you choose to save to the hosted CP Notes service. Your password is sent over HTTPS at sign-in; the service stores a salted password hash, not plaintext. Sessions use revocable tokens. The extension stores its session token and unsent drafts locally; it does not use Chrome sync, collect coding-platform passwords, read submission history, or automatically upload your browsing history. Feedback is submitted separately through the linked form. Account notes are private to that account.
 
-Deletion/reset requests go to **[owner contact, required before publication]**. Notes remain until deleted or the operator fulfills an account deletion request. Daily backups expire after 14 days; any pre-migration backup retention must be disclosed explicitly. The website's privacy page must name the operator, final service domain, feedback provider and contact channel before publication. Do not claim zero data collection in store disclosures.
+Deletion/reset contact: **aryankhade80@gmail.com**, phone **7219283196**. The public policy source is `website/src/pages/PrivacyPage.tsx`; the intended deployed URL is `https://upsolve-aryan.duckdns.org/privacy`. Verify deployment before using this URL in the store. Notes remain until deleted or the operator fulfills an account deletion request; deleting a note retains its linked problem record. Backup/migration copies may retain deleted data until rotated or manually removed. The deployment configuration targets 14-day daily-backup retention, but this has not been verified on the live service, and migration copies have separate retention. Do not promise a universal 14-day deletion deadline. Confirm actual backup retention and update the policy before submission if a specific deadline is promised.
+
+Data-use disclosures: personally identifiable information (email/account ID), authentication information (login/session), location (IP addresses used for sign-in protection), web history (captured problem URLs/titles), and website content (notes/code/problem details). The extension has no remote executable code. Feedback opens Google Forms separately. Ensure store declarations match the public policy and actual operating practices, including Limited Use. Do not claim zero data collection.
 
 ## Store assets and reviewer preparation
 

@@ -17,6 +17,11 @@ it("serves only public assets and keeps API failures JSON", async () => {
     const token = "a".repeat(43);
     context.database.createSession(1, "test", hashToken(token), "extension", new Date(Date.now() + 60_000).toISOString());
     await request(context.app).get("/").expect(200).expect(/CP Notes/);
+    for (const path of ["/privacy", "/privacy/"]) {
+      await request(context.app).get(path).expect(200).expect("Content-Type", /html/).expect(/CP Notes/);
+    }
+    await request(context.app).get("/privacy/missing").expect(404);
+    await request(context.app).get("/api/feed").expect(401);
     for (const path of ["/.env", "/backend/data/cp-notes.db", "/backend/src/app.ts", "/package.json"]) await request(context.app).get(path).expect(404);
     const missing = await request(context.app).get("/api/unknown").auth(token, { type: "bearer" }).expect(404);
     expect(missing.body.error.code).toBe("route_not_found");

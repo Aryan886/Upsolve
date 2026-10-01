@@ -213,7 +213,7 @@ export function createApp(options: CreateAppOptions): { app: express.Express; cl
   app.use("/api", api);
   if (options.websiteDirectory) {
     app.use(express.static(options.websiteDirectory, { dotfiles: "deny", index: false }));
-    app.get("/", (_request, response) => response.sendFile(join(options.websiteDirectory!, "index.html")));
+    app.get(["/", "/privacy"], (_request, response) => response.sendFile(join(options.websiteDirectory!, "index.html")));
   }
 
   app.use((_request, _response, next) => {
