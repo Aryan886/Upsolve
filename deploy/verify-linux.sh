@@ -22,7 +22,7 @@ node --version
 npm --version
 npm ci --cache "$verification_directory/npm-cache"
 npm run check
-VITE_BACKEND_URL=https://notes.example.test/api VITE_FEEDBACK_URL=https://feedback.example.test/form VITE_EXTENSION_ID=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa npm run build:release
+VITE_BACKEND_URL=https://notes.example.test/api VITE_FEEDBACK_URL=https://feedback.example.test/form VITE_EXTENSION_ID=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa VITE_EXTENSION_INSTALL_URL=https://chromewebstore.google.com/detail/cp-notes/gdfdnapanhndofblljbgfppndhdlioko npm run build:release
 npm prune --omit=dev
 node deploy/verify-release.mjs
 node backend/dist/admin.js benchmark

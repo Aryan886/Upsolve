@@ -3,6 +3,7 @@ import { InvitationTokenSchema } from "@cp-notes/shared";
 import { ApiError, clearSessionData, getCurrentUser, logout } from "./api";
 import { LoginForm, PasswordForm } from "./components/LoginForm";
 import { InvitationForm } from "./components/InvitationForm";
+import { BetaSignupForm } from "./components/BetaSignupForm";
 import { useEffect, useRef, useState } from "react";
 import { FeedPage } from "./pages/FeedPage";
 import { MistakesPage } from "./pages/MistakesPage";
@@ -11,16 +12,22 @@ import { PrivacyPage } from "./pages/PrivacyPage";
 
 type Page = "feed" | "mistakes" | "patterns" | "snippets" | "editorial";
 
-export type InvitationEntry = { token: string } | { invalid: true };
+export type SignupEntry =
+  | { kind: "invitation"; token: string }
+  | { kind: "beta"; token: string }
+  | { kind: "invalid" };
 
-export function readInvitation(): InvitationEntry | null {
+export function readSignupLink(): SignupEntry | null {
   const parameters = new URLSearchParams(window.location.hash.slice(1));
-  const tokens = parameters.getAll("invite");
-  if (tokens.length === 0) return null;
+  const invitationTokens = parameters.getAll("invite");
+  const betaTokens = parameters.getAll("beta");
+  if (invitationTokens.length === 0 && betaTokens.length === 0) return null;
   window.history.replaceState(window.history.state, "", `${window.location.pathname}${window.location.search}`);
-  const result = InvitationTokenSchema.safeParse(tokens[0]);
-  if (tokens.length !== 1 || !result.success) return { invalid: true };
-  return { token: result.data };
+  if (invitationTokens.length + betaTokens.length !== 1) return { kind: "invalid" };
+  const kind = invitationTokens.length === 1 ? "invitation" : "beta";
+  const result = InvitationTokenSchema.safeParse(kind === "invitation" ? invitationTokens[0] : betaTokens[0]);
+  if (!result.success) return { kind: "invalid" };
+  return { kind, token: result.data };
 }
 
 const pages: { id: Page; label: string }[] = [
@@ -55,19 +62,19 @@ function Diary() {
 }
 
 
-export default function App({ initialInvitation = null }: { initialInvitation?: InvitationEntry | null }) {
+export default function App({ initialSignup = null }: { initialSignup?: SignupEntry | null }) {
   if (window.location.pathname === "/privacy" || window.location.pathname === "/privacy/") return <PrivacyPage />;
-  return <AccountApp initialInvitation={initialInvitation} />;
+  return <AccountApp initialSignup={initialSignup} />;
 }
 
-function AccountApp({ initialInvitation }: { initialInvitation: InvitationEntry | null }) {
+function AccountApp({ initialSignup }: { initialSignup: SignupEntry | null }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [reload, setReload] = useState(0);
-  const [invitation, setInvitation] = useState(initialInvitation);
+  const [signup, setSignup] = useState(initialSignup);
   const [loginEmail, setLoginEmail] = useState("");
   const [showChecklist, setShowChecklist] = useState(false);
   const sessionGeneration = useRef(0);
@@ -95,7 +102,7 @@ function AccountApp({ initialInvitation }: { initialInvitation: InvitationEntry 
       sessionGeneration.current += 1;
       clearSessionData();
       setUser(null);
-      setInvitation(null);
+      setSignup(null);
       setLoginEmail("");
       setShowChecklist(false);
       setMessage("");
@@ -142,7 +149,7 @@ function AccountApp({ initialInvitation }: { initialInvitation: InvitationEntry 
   function showSignIn(email = "", notice = ""): void {
     sessionGeneration.current += 1;
     clearSessionData();
-    setInvitation(null);
+    setSignup(null);
     setLoginEmail(email);
     setMessage(notice);
     setError("");
@@ -156,20 +163,23 @@ function AccountApp({ initialInvitation }: { initialInvitation: InvitationEntry 
     {error && <p role="alert" className="inline-error">{error} <button onClick={() => setReload((value) => value + 1)}>Retry</button></p>}
     {loading ? <p role="status">Checking your session...</p> : user ? <>
       <div className="account-bar"><span>{user.email}</span><button className="button secondary" disabled={busy} onClick={() => void signOut()}>Sign out</button></div>
-      {invitation ? <section className="account-card">
-        <h2>Set up an invited account</h2>
-        <p>You are signed in as {user.email}. Sign out before setting up an invited account.</p>
+      {signup ? <section className="account-card">
+        <h2>Set up another account</h2>
+        <p>You are signed in as {user.email}. Sign out before setting up another account.</p>
         <button className="button secondary" disabled={busy} onClick={() => showSignIn()}>Return to diary</button>
       </section> : <>
       <details className="account-card" open={showChecklist}><summary>Start here</summary><ol>
-        <li>{install ? <a href={install} target="_blank" rel="noreferrer">Install the CP Notes extension</a> : "Install the extension from your beta invitation."}</li>
+        <li>{install ? <a href={install} target="_blank" rel="noreferrer">Install the CP Notes extension</a> : "Install the extension from the link shared by the beta operator."}</li>
         <li>Sign in to the extension with the same email and password you use here.</li><li>Open a LeetCode, Codeforces, CodeChef, or AtCoder problem. Open the extension, write a note, and save.</li>
         <li>Find and edit your saved note in this diary.</li>
       </ol></details>
-      <PasswordForm key={user.id} onChanged={() => { if (generation === sessionGeneration.current) accountChanged(null, "Password changed. Sign in again on each device."); }} />
-      <Diary key={user.id} />
+      <PasswordForm key={`password-${user.id}`} onChanged={() => { if (generation === sessionGeneration.current) accountChanged(null, "Password changed. Sign in again on each device."); }} />
+      <Diary key={`diary-${user.id}`} />
       </>}
-    </> : !error && (invitation ? <InvitationForm entry={invitation}
+    </> : !error && (signup?.kind === "beta" ? <BetaSignupForm entry={signup}
+      onAccepted={(email) => { if (generation === sessionGeneration.current) showSignIn(email, "Account created. Sign in to continue."); }}
+      onSignIn={(email, notice) => { if (generation === sessionGeneration.current) showSignIn(email, notice); }} />
+      : signup ? <InvitationForm entry={signup}
       onAccepted={(email) => { if (generation === sessionGeneration.current) showSignIn(email, "Account created. Sign in to continue."); }}
       onSignIn={(email, notice) => { if (generation === sessionGeneration.current) showSignIn(email, notice); }} />
       : <LoginForm key={loginEmail} initialEmail={loginEmail} onLogin={(nextUser) => { if (generation === sessionGeneration.current) accountChanged(nextUser); }} />)}

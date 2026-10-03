@@ -1,14 +1,16 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import App, { readInvitation } from "./App";
-import { acceptInvitation, ApiError, changePassword, getCurrentUser, inspectInvitation, login, logout } from "./api";
+import App, { readSignupLink } from "./App";
+import { acceptBetaSignup, acceptInvitation, ApiError, changePassword, getCurrentUser, inspectBetaSignup, inspectInvitation, login, logout } from "./api";
 
 vi.mock("./api", async (importOriginal) => ({
   ...await importOriginal<typeof import("./api")>(),
   getCurrentUser: vi.fn(),
   inspectInvitation: vi.fn(),
   acceptInvitation: vi.fn(),
+  inspectBetaSignup: vi.fn(),
+  acceptBetaSignup: vi.fn(),
   login: vi.fn(),
   logout: vi.fn(),
   changePassword: vi.fn(),
@@ -41,6 +43,7 @@ beforeEach(() => {
   AccountChannel.channels = [];
   vi.mocked(getCurrentUser).mockRejectedValue(new ApiError("session_expired", "Sign in again"));
   vi.mocked(inspectInvitation).mockResolvedValue(invitation);
+  vi.mocked(inspectBetaSignup).mockResolvedValue({ expiresAt: "2030-01-08T00:00:00.000Z", remainingSignups: 30 });
   window.history.replaceState(null, "", "/");
 });
 afterEach(() => { cleanup(); vi.resetAllMocks(); vi.unstubAllGlobals(); });
@@ -59,9 +62,28 @@ it("keeps normal visits on the existing login path", async () => {
   expect(screen.getByRole("link", { name: "Privacy policy" })).toHaveAttribute("href", "/privacy");
 });
 
+it("takes a shared beta signup through normal login and onboarding", async () => {
+  vi.mocked(acceptBetaSignup).mockResolvedValue({ email: "tester@example.com" });
+  vi.mocked(login).mockResolvedValue({ ...secondUser, email: "tester@example.com" });
+  render(<App initialSignup={{ kind: "beta", token }} />);
+  await screen.findByRole("button", { name: "Create account" });
+  expect(inspectInvitation).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText("Email"), { target: { value: "Tester@Example.com" } });
+  fireEvent.change(screen.getByLabelText("Password"), { target: { value: "a long password" } });
+  fireEvent.change(screen.getByLabelText("Confirm password"), { target: { value: "a long password" } });
+  fireEvent.submit(screen.getByRole("button", { name: "Create account" }).closest("form")!);
+  await screen.findByRole("button", { name: "Sign in" });
+  expect(screen.getByLabelText("Email")).toHaveValue("tester@example.com");
+  expect(acceptBetaSignup).toHaveBeenCalledExactlyOnceWith(token, "tester@example.com", "a long password", expect.any(AbortSignal));
+  fireEvent.change(screen.getByLabelText("Password"), { target: { value: "a long password" } });
+  fireEvent.submit(screen.getByRole("button", { name: "Sign in" }).closest("form")!);
+  await screen.findByText("Private diary");
+  expect(screen.getByText("Start here").closest("details")).toHaveAttribute("open");
+});
+
 it.each(["/privacy", "/privacy/"])("shows the public policy at %s without checking a session or invitation", (path) => {
   window.history.replaceState(null, "", path);
-  render(<App initialInvitation={{ token }} />);
+  render(<App initialSignup={{ kind: "invitation", token }} />);
   expect(screen.getByRole("heading", { name: "Privacy policy" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "aryankhade80@gmail.com" })).toHaveAttribute("href", "mailto:aryankhade80@gmail.com");
   expect(screen.getByRole("link", { name: "7219283196" })).toHaveAttribute("href", "tel:7219283196");
@@ -79,7 +101,7 @@ it("waits until session discovery finishes even after its real 401 event", async
     try { return await actual.getCurrentUser(); }
     catch (error) { await new Promise<void>((resolve) => { finishSession = resolve; }); throw error; }
   });
-  render(<App initialInvitation={{ token }} />);
+  render(<App initialSignup={{ kind: "invitation", token }} />);
   await screen.findByText("Sign in to continue.");
   expect(screen.getByText("Checking your session...")).toBeInTheDocument();
   expect(inspectInvitation).not.toHaveBeenCalled();
@@ -91,14 +113,14 @@ it("waits until session discovery finishes even after its real 401 event", async
 it("retains the startup token through StrictMode without browser storage", async () => {
   const store = vi.spyOn(Storage.prototype, "setItem");
   window.history.replaceState(null, "", `/#invite=${token}`);
-  const initialInvitation = readInvitation();
+  const initialSignup = readSignupLink();
   expect(window.location.hash).toBe("");
-  render(<StrictMode><App initialInvitation={initialInvitation} /></StrictMode>);
+  render(<StrictMode><App initialSignup={initialSignup} /></StrictMode>);
   await screen.findByRole("button", { name: "Create account" });
   expect(getCurrentUser).toHaveBeenCalledTimes(2);
   expect(vi.mocked(inspectInvitation).mock.calls[0]?.[0]).toBe(token);
   expect(store).not.toHaveBeenCalled();
-  expect(readInvitation()).toBeNull();
+  expect(readSignupLink()).toBeNull();
   store.mockRestore();
 });
 
@@ -106,14 +128,14 @@ it("requires explicit logout and keeps the invitation after logout fails", async
   vi.mocked(getCurrentUser).mockResolvedValue(firstUser);
   vi.mocked(logout).mockRejectedValueOnce(new Error("Could not sign out"))
     .mockResolvedValueOnce(undefined);
-  render(<App initialInvitation={{ token }} />);
-  await screen.findByRole("heading", { name: "Set up an invited account" });
+  render(<App initialSignup={{ kind: "invitation", token }} />);
+  await screen.findByRole("heading", { name: "Set up another account" });
   expect(screen.getByText(/Sign out before setting up/)).toHaveTextContent(firstUser.email);
   expect(inspectInvitation).not.toHaveBeenCalled();
   expect(logout).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Could not sign out");
-  expect(screen.getByRole("heading", { name: "Set up an invited account" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Set up another account" })).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
   await screen.findByRole("button", { name: "Create account" });
   expect(vi.mocked(inspectInvitation).mock.calls[0]?.[0]).toBe(token);
@@ -121,7 +143,7 @@ it("requires explicit logout and keeps the invitation after logout fails", async
 
 it("lets a signed-in visitor dismiss setup and keep the diary", async () => {
   vi.mocked(getCurrentUser).mockResolvedValue(firstUser);
-  render(<App initialInvitation={{ token }} />);
+  render(<App initialSignup={{ kind: "invitation", token }} />);
   fireEvent.click(await screen.findByRole("button", { name: "Return to diary" }));
   expect(screen.getByText("Private diary")).toBeInTheDocument();
   expect(logout).not.toHaveBeenCalled();
@@ -132,12 +154,12 @@ it("keeps the invitation pending while logout runs and cannot return to the diar
   let finish: () => void = () => undefined;
   vi.mocked(getCurrentUser).mockResolvedValue(firstUser);
   vi.mocked(logout).mockImplementation(() => new Promise<void>((resolve) => { finish = resolve; }));
-  render(<App initialInvitation={{ token }} />);
+  render(<App initialSignup={{ kind: "invitation", token }} />);
   fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
   const returnButton = screen.getByRole("button", { name: "Return to diary" });
   expect(returnButton).toBeDisabled();
   fireEvent.click(returnButton);
-  expect(screen.getByRole("heading", { name: "Set up an invited account" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Set up another account" })).toBeInTheDocument();
   expect(screen.queryByText("Private diary")).not.toBeInTheDocument();
   await act(async () => { finish(); });
   await screen.findByRole("button", { name: "Create account" });
@@ -148,7 +170,7 @@ it("keeps the invitation pending while logout runs and cannot return to the diar
 it("clears confirmed setup, prefills login, and opens onboarding after normal login", async () => {
   vi.mocked(acceptInvitation).mockResolvedValue({ email: invitation.email });
   vi.mocked(login).mockResolvedValue({ ...secondUser, email: invitation.email });
-  render(<App initialInvitation={{ token }} />);
+  render(<App initialSignup={{ kind: "invitation", token }} />);
   await screen.findByRole("button", { name: "Create account" });
   submitSetup();
   await screen.findByRole("button", { name: "Sign in" });
@@ -167,7 +189,7 @@ it("clears confirmed setup, prefills login, and opens onboarding after normal lo
 
 it("offers normal prefilled login after an uncertain acceptance without replaying it", async () => {
   vi.mocked(acceptInvitation).mockRejectedValue(new ApiError("internal_error", "Unknown outcome", undefined, 500));
-  render(<App initialInvitation={{ token }} />);
+  render(<App initialSignup={{ kind: "invitation", token }} />);
   await screen.findByRole("button", { name: "Create account" });
   submitSetup();
   fireEvent.click(await screen.findByRole("button", { name: "Sign in with the password you just chose" }));
@@ -180,7 +202,7 @@ it("offers normal prefilled login after an uncertain acceptance without replayin
 it("discards delayed inspection when an account broadcast discovers another user", async () => {
   let finish: (value: typeof invitation) => void = () => undefined;
   vi.mocked(inspectInvitation).mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
-  render(<App initialInvitation={{ token }} />);
+  render(<App initialSignup={{ kind: "invitation", token }} />);
   await screen.findByText("Checking your invitation...");
   vi.mocked(getCurrentUser).mockResolvedValueOnce(secondUser);
   act(() => { AccountChannel.changed(); });
@@ -194,7 +216,7 @@ it("discards delayed inspection when an account broadcast discovers another user
 it("discards delayed acceptance when an account broadcast discovers another user", async () => {
   let finish: (value: { email: string }) => void = () => undefined;
   vi.mocked(acceptInvitation).mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
-  render(<App initialInvitation={{ token }} />);
+  render(<App initialSignup={{ kind: "invitation", token }} />);
   await screen.findByRole("button", { name: "Create account" });
   submitSetup();
   vi.mocked(getCurrentUser).mockResolvedValueOnce(secondUser);
@@ -225,7 +247,7 @@ it("ignores delayed login after an external account change", async () => {
 it("preserves setup through a failed session check and explicit retry", async () => {
   vi.mocked(getCurrentUser).mockRejectedValueOnce(new Error("Unavailable"))
     .mockRejectedValueOnce(new ApiError("session_expired", "Sign in again"));
-  render(<App initialInvitation={{ token }} />);
+  render(<App initialSignup={{ kind: "invitation", token }} />);
   expect(await screen.findByRole("alert")).toHaveTextContent("Unavailable");
   expect(inspectInvitation).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Retry" }));

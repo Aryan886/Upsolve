@@ -2,6 +2,9 @@ import Database from "better-sqlite3";
 import {
   ROOT_CAUSES,
   INVITATION_INVALID_MESSAGE,
+  BETA_ACCOUNT_UNAVAILABLE_MESSAGE,
+  BETA_FULL_MESSAGE,
+  BETA_UNAVAILABLE_MESSAGE,
   detectProblemPage,
   type User,
   type Editorial,
@@ -41,6 +44,14 @@ export interface SearchPageOptions extends PageOptions {
 export interface DatePageOptions extends PageOptions {
   from?: string | undefined;
   to?: string | undefined;
+}
+
+export interface BetaStatus {
+  state: "not issued" | "open" | "expired" | "revoked" | "full";
+  signupCount: number;
+  maxSignups: number;
+  remainingSignups: number;
+  expiresAt: string | null;
 }
 
 const problemColumns = `
@@ -121,7 +132,7 @@ export class NotesDatabase {
 
   private migrate(legacyOwner?: { email: string; passwordHash: string }): void {
     const version = this.db.pragma("user_version", { simple: true }) as number;
-    if (version > 3) {
+    if (version > 4) {
       throw new AppError(500, "database_too_new", `Database schema version ${version} is not supported`);
     }
     if (version === 0) {
@@ -186,6 +197,23 @@ export class NotesDatabase {
     }
     if (version < 2) this.migrateOwnership(legacyOwner);
     if (version < 3) this.migrateInvitations();
+    if (version < 4) this.migrateBetaSignup();
+  }
+
+  private migrateBetaSignup(): void {
+    this.db.transaction(() => {
+      this.db.exec(`
+        CREATE TABLE beta_signup (
+          id INTEGER PRIMARY KEY CHECK (id = 1),
+          token_hash TEXT UNIQUE,
+          max_signups INTEGER NOT NULL DEFAULT 30 CHECK (max_signups BETWEEN 1 AND 30),
+          signup_count INTEGER NOT NULL DEFAULT 0 CHECK (signup_count BETWEEN 0 AND max_signups),
+          created_at TEXT NOT NULL,
+          expires_at TEXT NOT NULL
+        );
+      `);
+      this.db.pragma("user_version = 4");
+    })();
   }
 
   private migrateInvitations(): void {
@@ -310,6 +338,67 @@ export class NotesDatabase {
       if (error instanceof AppError && error.code === "account_exists") throw invalid();
       if (error instanceof Database.SqliteError && error.code === "SQLITE_CONSTRAINT_UNIQUE" && error.message.includes("users.email")) {
         throw invalid();
+      }
+      throw error;
+    }
+  }
+
+  getBetaStatus(): BetaStatus {
+    const row = this.db.prepare("SELECT token_hash, max_signups, signup_count, expires_at FROM beta_signup WHERE id = 1").get() as Row | undefined;
+    if (!row) return { state: "not issued", signupCount: 0, maxSignups: 30, remainingSignups: 30, expiresAt: null };
+    const signupCount = Number(row.signup_count);
+    const maxSignups = Number(row.max_signups);
+    const expiresAt = String(row.expires_at);
+    let state: BetaStatus["state"] = "open";
+    if (signupCount >= maxSignups) state = "full";
+    else if (row.token_hash === null) state = "revoked";
+    else if (expiresAt <= new Date().toISOString()) state = "expired";
+    return { state, signupCount, maxSignups, remainingSignups: maxSignups - signupCount, expiresAt };
+  }
+
+  issueBetaSignup(tokenHash: string, expiresAt: string): BetaStatus {
+    return this.db.transaction(() => {
+      const status = this.getBetaStatus();
+      if (status.remainingSignups === 0) throw new AppError(400, "beta_full", BETA_FULL_MESSAGE);
+      this.db.prepare(`INSERT INTO beta_signup (id, token_hash, created_at, expires_at)
+        VALUES (1, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET token_hash = excluded.token_hash, expires_at = excluded.expires_at`)
+        .run(tokenHash, new Date().toISOString(), expiresAt);
+      return this.getBetaStatus();
+    }).immediate();
+  }
+
+  getBetaSignup(tokenHash: string): { expiresAt: string; remainingSignups: number } | null {
+    const row = this.db.prepare("SELECT expires_at, max_signups, signup_count FROM beta_signup WHERE id = 1 AND token_hash = ?")
+      .get(tokenHash) as Row | undefined;
+    if (!row || String(row.expires_at) <= new Date().toISOString()) return null;
+    const remainingSignups = Number(row.max_signups) - Number(row.signup_count);
+    if (remainingSignups === 0) throw new AppError(400, "beta_full", BETA_FULL_MESSAGE);
+    return { expiresAt: String(row.expires_at), remainingSignups };
+  }
+
+  revokeBetaSignup(): boolean {
+    return this.db.prepare("UPDATE beta_signup SET token_hash = NULL WHERE id = 1 AND token_hash IS NOT NULL").run().changes === 1;
+  }
+
+  acceptBetaSignup(tokenHash: string, email: string, passwordHash: string): { email: string } {
+    try {
+      return this.db.transaction(() => {
+        if (!this.getBetaSignup(tokenHash)) throw new AppError(400, "beta_unavailable", BETA_UNAVAILABLE_MESSAGE);
+        if (this.getUserByEmail(email)) throw new AppError(400, "beta_account_unavailable", BETA_ACCOUNT_UNAVAILABLE_MESSAGE);
+        const user = this.createUser(email, passwordHash);
+        const result = this.db.prepare(`UPDATE beta_signup SET signup_count = signup_count + 1
+          WHERE id = 1 AND token_hash = ? AND expires_at > ? AND signup_count < max_signups`)
+          .run(tokenHash, new Date().toISOString());
+        if (result.changes !== 1) throw new AppError(400, "beta_unavailable", BETA_UNAVAILABLE_MESSAGE);
+        return { email: user.email };
+      }).immediate();
+    } catch (error) {
+      if (error instanceof AppError && error.code === "account_exists") {
+        throw new AppError(400, "beta_account_unavailable", BETA_ACCOUNT_UNAVAILABLE_MESSAGE);
+      }
+      if (error instanceof Database.SqliteError && error.code === "SQLITE_CONSTRAINT_UNIQUE" && error.message.includes("users.email")) {
+        throw new AppError(400, "beta_account_unavailable", BETA_ACCOUNT_UNAVAILABLE_MESSAGE);
       }
       throw error;
     }

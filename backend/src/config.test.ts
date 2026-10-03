@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { readConfig, readInvitationConfig } from "./config.js";
+import { readBetaSignupConfig, readConfig, readInvitationConfig } from "./config.js";
 it("requires explicit local mode to relax cookies", () => {
   expect(readConfig({}).localDevelopment).toBe(false);
   expect(readConfig({ LOCAL_DEVELOPMENT: "true" }).localDevelopment).toBe(true);
@@ -43,4 +43,14 @@ it("keeps invitation origins free of paths, credentials, queries and fragments",
     "https://notes.test/", "https://notes.test/path", "https://notes.test?next=other",
     "https://notes.test#invite=value", "https://user:password@notes.test", "ftp://notes.test", "not a URL",
   ]) expect(() => readInvitationConfig({ APP_ORIGIN: appOrigin })).toThrow("APP_ORIGIN");
+});
+
+it("validates shared beta link lifetime independently of invitation settings", () => {
+  const environment = { NODE_ENV: "production", APP_ORIGIN: "https://notes.test", INVITATION_HOURS: "invalid" };
+  expect(readBetaSignupConfig(environment)).toEqual({ appOrigin: "https://notes.test", betaSignupHours: 168 });
+  expect(readBetaSignupConfig({ ...environment, BETA_SIGNUP_HOURS: "1" }).betaSignupHours).toBe(1);
+  for (const value of ["", "0", "169", "1.5", "NaN"]) {
+    expect(() => readBetaSignupConfig({ ...environment, BETA_SIGNUP_HOURS: value })).toThrow("BETA_SIGNUP_HOURS");
+  }
+  expect(() => readBetaSignupConfig({ APP_ORIGIN: "http://notes.test" })).toThrow("HTTPS");
 });

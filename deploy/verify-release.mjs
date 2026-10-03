@@ -53,6 +53,15 @@ async function issue(email, extraEnvironment = {}) {
   } finally { stored.close(); }
   return token;
 }
+async function issueBeta() {
+  const stdout = await admin(["beta-link"]);
+  const link = /Shared beta signup link: (\S+)/.exec(stdout)?.[1];
+  assert.ok(link, "Compiled beta command must print a link");
+  const url = new URL(link);
+  assert.equal(url.origin, origin);
+  assert.ok(/^#beta=[A-Za-z0-9_-]{43}$/.test(url.hash));
+  return url.hash.slice("#beta=".length);
+}
 const socket = createServer();
 socket.listen(0, "127.0.0.1");
 await once(socket, "listening");
@@ -94,6 +103,7 @@ try {
   const oldInvitationB = await issue("b@example.test", { INVITATION_HOURS: "2" });
   const invitationB = await issue("b@example.test");
   const revoked = await issue("revoked@example.test");
+  const betaToken = await issueBeta();
   await admin(["revoke-invite", "revoked@example.test"]);
   assert.match(await admin(["revoke-invite", "revoked@example.test"]), /No outstanding invitation/);
   await start(databasePath);
@@ -103,7 +113,9 @@ try {
   assert.match(html, /CP Notes/);
   const script = /src="([^"]+\.js)"/.exec(html)?.[1];
   assert.ok(script);
-  assert.equal((await fetch(`${address}${script}`)).status, 200);
+  const websiteAsset = await fetch(`${address}${script}`);
+  assert.equal(websiteAsset.status, 200);
+  assert.match(await websiteAsset.text(), /gdfdnapanhndofblljbgfppndhdlioko/, "Website onboarding must include the published store link");
   for (const path of ["/.env", "/backend/data/cp-notes.db", "/package.json", "/backend/src/index.ts"]) assert.equal((await fetch(`${address}${path}`)).status, 404);
   assert.equal((await api("/feed")).status, 401);
   for (const token of [oldInvitationB, revoked]) {
@@ -124,6 +136,15 @@ try {
     assert.equal((await api("/auth/me", token)).status, 401);
     assert.equal((await api("/auth/invitations/accept", undefined, { token, password }, origin)).status, 400);
   }
+  const betaInspect = await api("/auth/beta/inspect", undefined, { token: betaToken }, origin);
+  assert.equal(betaInspect.status, 200);
+  assert.equal(betaInspect.body.data.remainingSignups, 30);
+  const betaAccepted = await api("/auth/beta/accept", undefined, { token: betaToken, email: "beta@example.test", password }, origin);
+  assert.equal(betaAccepted.status, 201);
+  assert.deepEqual(betaAccepted.body, { data: { email: "beta@example.test" } });
+  assert.equal(betaAccepted.cookie, null);
+  assert.equal((await api("/auth/extension-login", undefined, { email: "beta@example.test", password })).status, 200);
+  assert.match(await admin(["beta-status"]), /1 \/ 30 signups/);
   const websiteLogin = await api("/auth/login", undefined, { email: "a@example.test", password }, origin);
   assert.equal(websiteLogin.status, 200);
   assert.ok(websiteLogin.cookie?.includes("Secure"));
@@ -141,11 +162,13 @@ try {
   await stop();
   await start(databasePath);
   assert.equal((await api("/patterns?query=release", token)).body.meta.total, 1);
+  assert.equal((await api("/auth/beta/inspect", undefined, { token: betaToken }, origin)).body.data.remainingSignups, 29);
   assert.equal((await api("/auth/invitations/inspect", undefined, { token: outstanding }, origin)).status, 200);
   await admin(["revoke-invite", "restore@example.test"]);
   assert.equal((await api("/auth/invitations/inspect", undefined, { token: outstanding }, origin)).status, 400);
   await stop();
   await start(backup);
+  assert.equal((await api("/auth/beta/inspect", undefined, { token: betaToken }, origin)).body.data.remainingSignups, 29);
   assert.equal((await api("/feed", token)).body.meta.total, 1);
   assert.equal((await api("/feed", second.body.data.token)).body.meta.total, 0);
   const restoredLogin = await api("/auth/extension-login", undefined, { email: "a@example.test", password });
@@ -154,11 +177,13 @@ try {
   // Restoring an older snapshot can revive a later-revoked invitation.
   assert.equal((await api("/auth/invitations/inspect", undefined, { token: outstanding }, origin)).status, 200);
   await admin(["revoke-invite", "restore@example.test"], backup);
+  await admin(["revoke-beta-link"], backup);
   assert.equal((await api("/auth/invitations/inspect", undefined, { token: outstanding }, origin)).status, 400);
+  assert.equal((await api("/auth/beta/inspect", undefined, { token: betaToken }, origin)).status, 400);
   await stop();
   const manifest = JSON.parse(await readFile(new URL("../extension/dist/manifest.json", import.meta.url), "utf8"));
   assert.deepEqual(manifest.host_permissions, ["https://notes.example.test/*"]);
   assert.ok(!manifest.permissions.includes("tabs"));
-  console.log("Linux production smoke passed: compiled invitation issue/reissue/revoke, acceptance, website/extension login, startup/static assets, authenticated save/search, isolation, invitation/session restart persistence, schema-3 restore/revocation, SIGTERM and extension host permission.");
+  console.log("Linux production smoke passed: compiled invitation and beta-link commands, account setup, website/extension login, startup/static assets, authenticated save/search, isolation, signup/session restart persistence, schema-4 restore/revocation, SIGTERM and extension host permission.");
   console.log(`Temporary verification data: ${directory}`);
 } finally { await stop(); }

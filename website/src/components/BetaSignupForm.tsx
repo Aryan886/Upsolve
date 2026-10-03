@@ -1,21 +1,21 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { INVITATION_INVALID_MESSAGE, PasswordSchema, type Invitation } from "@cp-notes/shared";
+import { EmailSchema, PasswordSchema, type BetaSignup } from "@cp-notes/shared";
 import type { SignupEntry } from "../App";
-import { acceptInvitation, ApiError, inspectInvitation } from "../api";
+import { acceptBetaSignup, ApiError, inspectBetaSignup } from "../api";
 
-const recoveryMessage = "Account setup may have completed. Sign in with the password you just chose. If sign-in fails, ask the person who invited you for a new link.";
+const recoveryMessage = "Account setup may have completed. Sign in with the password you just chose. If sign-in fails, contact the person who shared your link.";
 
-export function InvitationForm({ entry, onAccepted, onSignIn }: {
-  entry: Extract<SignupEntry, { kind: "invitation" | "invalid" }>;
+export function BetaSignupForm({ entry, onAccepted, onSignIn }: {
+  entry: Extract<SignupEntry, { kind: "beta" }>;
   onAccepted: (email: string) => void;
   onSignIn: (email: string, notice: string) => void;
 }) {
-  const token = entry.kind === "invitation" ? entry.token : null;
-  const [invitation, setInvitation] = useState<Invitation | null>(null);
-  const [loading, setLoading] = useState(token !== null);
-  const [inspectError, setInspectError] = useState(token === null ? INVITATION_INVALID_MESSAGE : "");
-  const [invalid, setInvalid] = useState(token === null);
+  const [signup, setSignup] = useState<BetaSignup | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [inspectError, setInspectError] = useState("");
+  const [linkUnavailable, setLinkUnavailable] = useState(false);
   const [revision, setRevision] = useState(0);
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [error, setError] = useState("");
@@ -26,6 +26,7 @@ export function InvitationForm({ entry, onAccepted, onSignIn }: {
   const mounted = useRef(false);
   const requestGeneration = useRef(0);
   const acceptance = useRef<AbortController | null>(null);
+  const submittedEmail = useRef("");
 
   useEffect(() => {
     mounted.current = true;
@@ -33,29 +34,32 @@ export function InvitationForm({ entry, onAccepted, onSignIn }: {
   }, []);
 
   useEffect(() => {
-    if (!token) return;
     let active = true;
     const controller = new AbortController();
     const generation = ++requestGeneration.current;
     setLoading(true);
     setInspectError("");
-    setInvalid(false);
-    void inspectInvitation(token, controller.signal).then((result) => {
-      if (active && generation === requestGeneration.current) setInvitation(result);
+    setLinkUnavailable(false);
+    void inspectBetaSignup(entry.token, controller.signal).then((result) => {
+      if (active && generation === requestGeneration.current) setSignup(result);
     }).catch((caught: unknown) => {
       if (!active || generation !== requestGeneration.current || (caught instanceof DOMException && caught.name === "AbortError")) return;
-      setInvalid(caught instanceof ApiError && caught.code === "invitation_invalid");
-      setInspectError(caught instanceof ApiError ? caught.message : "This invitation could not be checked. Try again shortly.");
+      setSignup(null);
+      setLinkUnavailable(caught instanceof ApiError && ["beta_unavailable", "beta_full"].includes(caught.code));
+      setInspectError(caught instanceof ApiError ? caught.message : "This beta link could not be checked. Try again shortly.");
     }).finally(() => { if (active && generation === requestGeneration.current) setLoading(false); });
     return () => { active = false; requestGeneration.current += 1; controller.abort(); };
-  }, [token, revision]);
+  }, [entry.token, revision]);
 
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
-    if (submitting.current || completed.current || !token || !invitation) return;
+    if (submitting.current || completed.current || !signup) return;
+    const parsedEmail = EmailSchema.safeParse(email);
+    if (!parsedEmail.success) { setError("Enter a valid email address."); return; }
     if (!PasswordSchema.safeParse(password).success) { setError("Use a password with 12–128 characters."); return; }
     if (password !== confirmation) { setError("Passwords do not match."); return; }
     submitting.current = true;
+    submittedEmail.current = parsedEmail.data;
     const generation = requestGeneration.current;
     const controller = new AbortController();
     acceptance.current = controller;
@@ -63,9 +67,9 @@ export function InvitationForm({ entry, onAccepted, onSignIn }: {
     setError("");
     setRecovery(false);
     try {
-      const result = await acceptInvitation(token, password, controller.signal);
+      const result = await acceptBetaSignup(entry.token, parsedEmail.data, password, controller.signal);
       if (!mounted.current || generation !== requestGeneration.current) return;
-      if (result.email !== invitation.email) throw new ApiError("invalid_response", "CP Notes returned an unreadable account setup response.");
+      if (result.email !== parsedEmail.data) throw new ApiError("invalid_response", "CP Notes returned an unreadable account setup response.");
       completed.current = true;
       setPassword("");
       setConfirmation("");
@@ -74,9 +78,9 @@ export function InvitationForm({ entry, onAccepted, onSignIn }: {
     } catch (caught: unknown) {
       if (!mounted.current || generation !== requestGeneration.current) return;
       const definiteFailure = caught instanceof ApiError && caught.status !== undefined && caught.status >= 400 && caught.status < 500;
-      const unavailable = caught instanceof ApiError && caught.code === "invitation_invalid";
+      const unavailable = caught instanceof ApiError && ["beta_unavailable", "beta_full"].includes(caught.code);
       setRecovery(!definiteFailure || unavailable);
-      setError(unavailable ? INVITATION_INVALID_MESSAGE : definiteFailure ? caught.message : recoveryMessage);
+      setError(unavailable ? caught.message : definiteFailure ? caught.message : recoveryMessage);
     } finally {
       submitting.current = false;
       acceptance.current = null;
@@ -88,21 +92,23 @@ export function InvitationForm({ entry, onAccepted, onSignIn }: {
     requestGeneration.current += 1;
     acceptance.current?.abort();
     const notice = recovery || submitting.current ? recoveryMessage : "";
+    const parsedEmail = EmailSchema.safeParse(email);
     setPassword("");
     setConfirmation("");
-    onSignIn(invitation?.email ?? "", notice);
+    const currentEmail = parsedEmail.success ? parsedEmail.data : "";
+    onSignIn(notice ? submittedEmail.current : currentEmail, notice);
   }
 
   return <section className="account-card">
-    <h2>Set up your account</h2>
-    <p>Choose a password, then sign in to your diary. If you reload this page, reopen your original invitation link to continue setup.</p>
-    {loading ? <p role="status">Checking your invitation...</p> : inspectError ? <>
+    <h2>Join the CP Notes beta</h2>
+    <p>Choose an email and password for your diary. If you reload, reopen the original beta link to continue.</p>
+    {loading ? <p role="status">Checking the beta link...</p> : inspectError ? <>
       <p role="alert" className="inline-error">{inspectError}</p>
-      {!invalid && <button className="button secondary" onClick={() => setRevision((value) => value + 1)}>Retry invitation check</button>}
-    </> : invitation && <>
-      <p>Invited email: <strong>{invitation.email}</strong></p>
-      <p className="hint">This invitation expires {new Date(invitation.expiresAt).toLocaleString()}. Use 12–128 characters for your password.</p>
+      {!linkUnavailable && <button className="button secondary" onClick={() => setRevision((value) => value + 1)}>Retry link check</button>}
+    </> : signup && <>
+      <p className="hint">{signup.remainingSignups} beta spots currently remain. Your spot is confirmed only after account creation completes. This link expires {new Date(signup.expiresAt).toLocaleString()}.</p>
       <form onSubmit={(event) => void submit(event)}>
+        <label>Email<input name="email" type="email" autoComplete="email" required maxLength={254} disabled={busy} value={email} onChange={(event) => setEmail(event.target.value)} /></label>
         <label>Password<input name="password" type="password" autoComplete="new-password" minLength={12} maxLength={128} required disabled={busy} value={password} onChange={(event) => setPassword(event.target.value)} /></label>
         <label>Confirm password<input name="confirmPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} required disabled={busy} value={confirmation} onChange={(event) => setConfirmation(event.target.value)} /></label>
         {error && <p role="alert" className="inline-error">{error}</p>}

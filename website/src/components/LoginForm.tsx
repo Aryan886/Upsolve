@@ -26,7 +26,7 @@ export function LoginForm({ onLogin, initialEmail = "" }: { onLogin: (user: User
   }
   return <section className="account-card">
     <h2>Sign in to your diary</h2>
-    <p>Open your private invitation link to choose a password, then sign in here. Use the same email and password in the extension. Contact the person who invited you for a password reset.</p>
+    <p>Open your account setup link to choose a password, then sign in here. Use the same email and password in the extension. Contact the person who shared your link for a password reset.</p>
     <form onSubmit={(event) => void submit(event)}>
       <label>Email<input name="email" type="email" autoComplete="username" defaultValue={initialEmail} required maxLength={254} /></label>
       <label>Password<input name="password" type="password" autoComplete="current-password" required maxLength={128} /></label>

@@ -1,10 +1,10 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import App, { readInvitation } from "./App";
+import App, { readSignupLink } from "./App";
 import "./styles.css";
 
-const initialInvitation = readInvitation();
+const initialSignup = readSignupLink();
 const root = document.getElementById("root");
 if (!root) throw new Error("Missing #root element");
 
-createRoot(root).render(<StrictMode><App initialInvitation={initialInvitation} /></StrictMode>);
+createRoot(root).render(<StrictMode><App initialSignup={initialSignup} /></StrictMode>);

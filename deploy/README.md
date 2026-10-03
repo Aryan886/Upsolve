@@ -36,6 +36,8 @@ EXTENSION_ORIGINS=chrome-extension://YOUR_32_LETTER_ID
 SESSION_DAYS=30
 # Optional operator setting for newly issued invitations (1–168 hours):
 # INVITATION_HOURS=72
+# Optional operator setting for newly issued shared beta links (1–168 hours):
+# BETA_SIGNUP_HOURS=168
 ```
 
 `APP_ORIGIN` has no path or trailing slash. Configure each technical tester's unpacked ID explicitly if no common manifest key exists. CORS and IDs are not authentication. Production Node reads the environment supplied by systemd, not a repository `.env`.
@@ -71,13 +73,13 @@ Before the **first** startup, initialize the database using the compiled operato
 sudo -u cp-notes env DATABASE_PATH=/var/lib/cp-notes/cp-notes.db /opt/node/bin/node /opt/cp-notes/releases/VERSION/backend/dist/admin.js init owner@example.com
 ```
 
-For existing schema-1 notes, transfer a **consistent** backup into the persistent path with owner `cp-notes`, then run the same `init` command. Stop all old processes that can write this file. It prompts for a hidden password, backs up under `/var/lib/cp-notes/backups/pre-migration-*`, and performs the sequential ownership/invitation migrations preserving IDs, links and contents. It refuses an already initialized schema-2 or schema-3 database. Upload that pre-migration backup separately under `pre-migration/<release>/`; keep it until the beta's retention decision is recorded.
+For existing schema-1 notes, transfer a **consistent** backup into the persistent path with owner `cp-notes`, then run the same `init` command. Stop all old processes that can write this file. It prompts for a hidden password, backs up under `/var/lib/cp-notes/backups/pre-migration-*`, and performs the sequential ownership/invitation/beta migrations preserving IDs, links and contents. It refuses an already initialized schema-2, schema-3, or schema-4 database. Upload that pre-migration backup separately under `pre-migration/<release>/`; keep it until the beta's retention decision is recorded.
 
 For a schema-2 upgrade, **before the new server or any new admin CLI opens the real file**, stop the old app and create a SQLite-aware pre-migration backup using the previous release's backup workflow. Verify integrity/foreign keys and restore it independently with the matching release, retain it deliberately, and confirm its private off-server copy. Opening with `existingOnly` still applies the schema-3 migration. Do not use `invite` as the first upgrade step. Schema-2-to-3 DDL/version changes are transactional and preserve existing tables; this does not replace the backup requirement.
 
 For accounts after initialization, substitute `create`, `reset`, or `disable` for `init`. Passwords never belong in arguments, environment files, shell history or Vite values. `disable` retains data and revokes sessions; resetting a disabled account does not enable it. The operator handles password reset requests manually. Run `admin.js benchmark` on the actual 1 GB host and record time/RSS under two simultaneous logins. The configured scrypt profile is N=32768, r=8, p=3, with 64 MiB max per job and at most two jobs. It follows an [OWASP scrypt profile](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html#scrypt) using [Node's asynchronous crypto API](https://nodejs.org/docs/latest-v22.x/api/crypto.html#cryptoscryptpassword-salt-keylen-options-callback). Do not lower the cost to conceal memory pressure.
 
-Create `/opt/cp-notes/current` pointing to the verified release and start `cp-notes.service`. Check `curl --fail http://127.0.0.1:3000/health`, HTTPS login, extension save and website read/edit. Then enable the service at boot. Record schema compatibility: this release reads/writes **schema 3**; the preceding beta supports at most schema 2 and the original app supports schema 1.
+Create `/opt/cp-notes/current` pointing to the verified release and start `cp-notes.service`. Check `curl --fail http://127.0.0.1:3000/health`, HTTPS login, extension save and website read/edit. Then enable the service at boot. The shared beta release reads/writes **schema 4**; the preceding invitation release supports at most schema 3. Before any schema-4 server or admin command opens live schema-3 data, take and independently verify a SQLite-aware backup using the [Lightsail runbook](LIGHTSAIL_RUNBOOK.md#10a-shared-beta-signup-after-the-schema-4-release). A code-only rollback to schema 3 is incompatible.
 
 ## Invitation operations
 
@@ -96,6 +98,10 @@ The tester opens the link, chooses and confirms a 12–128 character password, s
 
 If acceptance is interrupted, the account may already exist. Tell the tester to sign in with the password just chosen before requesting another link; do not automatically replay acceptance. Invalid or used links provide the same recovery guidance. If sign-in fails, provide a replacement or the manual reset procedure as appropriate. Invitations cannot access notes or serve as login/reset credentials.
 
+## Shared beta signup operations
+
+Once schema 4 is deployed and verified, run `admin.js beta-link`, `admin.js beta-status`, or `admin.js revoke-beta-link` with the same `sudo -u cp-notes /opt/node/bin/node --env-file=/etc/cp-notes/app.env /opt/cp-notes/current/backend/dist/admin.js` prefix used above. The shared link is printed only on issue/reissue. It expires after seven days by default (`BETA_SIGNUP_HOURS`, 1–168), admits 30 successfully created accounts across all reissues, and can be revoked without affecting current users. Status shows usage but never the token. Existing accounts and individual invitations are outside its count. A tester enters an email/password, signs in normally, then follows onboarding to the [published extension](https://chromewebstore.google.com/detail/cp-notes/gdfdnapanhndofblljbgfppndhdlioko).
+
 ## Repeatable updates and rollback
 
 1. Build a new immutable release and pass the gate before touching `current`.
@@ -103,7 +109,7 @@ If acceptance is interrupted, the account may already exist. Tell the tester to 
 3. Stop the app if migrating or replacing the database. Never hold an async operation inside a SQLite transaction. Only the explicit initialization command can assign legacy ownership.
 4. Record the old link target. Create a new symlink next to `current`, then atomically replace `current` with `mv -Tf` on Linux. Restart the systemd service.
 5. Verify health, login and a real create/read/edit flow. Confirm an existing note remains. Keep the previous release and its schema number. Test reboot and a second release before inviting all testers.
-6. A code-only rollback is allowed only if the previous version supports the current schema. The schema-2 binary rejects schema 3: stop writes, restore the pre-migration schema-2 backup using the procedure below, and switch to its matching app version. **Restoring loses writes after the backup**, including newly accepted accounts. Obtain the owner's decision for that production data loss.
+6. A code-only rollback is allowed only if the previous version supports the current schema. Schema-2 binaries reject schema 3, and schema-3 binaries reject schema 4: stop writes, restore the matching pre-migration backup using the procedure below, and switch to its matching app version. **Restoring loses writes after the backup**, including newly accepted accounts. Obtain the owner's decision for that production data loss and reconcile the shared signup count before reopening registration.
 
 Never use an absent database as a reason to initialize an empty replacement. Production deliberately fails on missing/uninitialized database paths.
 

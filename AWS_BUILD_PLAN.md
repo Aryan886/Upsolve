@@ -1,14 +1,16 @@
 # CP Notes: AWS Beta Build Plan
 
-Status: local beta implementation and deployment tooling implemented; AWS provisioning, live release exercises, and store distribution pending.
+Status: website and extension published; shared beta signup implemented and verified locally, with production schema-4 rollout and live tester exercise pending.
 Implementation evidence: [release checklist](deploy/RELEASE_CHECKLIST.md).
 Prepared: 2026-09-27.
-Audience: approximately 10 invited testers.
+Audience: up to 30 shared-link beta signups, alongside existing or individually invited accounts.
 Purpose: publish a useful beta, collect feedback, and keep development and operating costs small.
 
 Approved scope addendum (2026-09-28): [invitation links implementation plan](INVITATION_LINKS_PLAN.md) adds operator-issued account setup links so testers can choose their own passwords. Local implementation and verification are recorded there and in the [release checklist](deploy/RELEASE_CHECKLIST.md); actual rollout remains pending. This extends manual account creation without enabling public registration or automated email delivery.
 
 This document is the implementation checklist. Creating it does not deploy the app, create AWS resources, migrate the existing database, or change application behavior.
+
+Implementation addendum (2026-10-03): [shared beta signup plan](SHARED_BETA_SIGNUP_PLAN.md) describes a reusable, expiring link capped at 30 new shared-link accounts, with the count preserved across link replacements. This extends the original recruitment scope; existing accounts and individual invitations remain supported. Local implementation is complete; production migration and live browser verification are pending.
 
 ## 1. Release objective
 
@@ -287,7 +289,7 @@ Acceptance: the operator can restore a downloaded backup independently of the li
 - [ ] Test an unpacked build with the owner and one other technical tester.
 - [ ] Prepare an unlisted Chrome Web Store listing, icons, screenshots, clear purpose, privacy information, and reviewer test access.
 - [ ] Explain that selected question metadata, notes, and account details go to the hosted service, and how users can request deletion.
-- [ ] Share the store install link and individual account setup instructions with the 10 testers after review.
+- [ ] Share the published store install link and the chosen setup link with up to 30 beta testers after live signup verification.
 - [ ] Run a one-to-two-week trial and collect feedback with a simple form and tester spreadsheet.
 - [ ] Track first successful capture, ability to find/edit a saved note, repeat use, installation/login friction, and reported data loss.
 - [ ] Prioritize blocked saves, lost drafts, privacy bugs, and confusing onboarding before adding new features.
@@ -347,4 +349,3 @@ Ship to all 10 users only when these checks pass. Record actual results and limi
 Keep each change small and reviewable. Follow the current naming, imports, and workspace layout. Use simple functions, explicit inputs, and contextual errors. Preserve the existing database access pattern; add new files only for a clear responsibility. Do not introduce an ORM, generic repository layer, state-management framework, or provider abstraction for hypothetical future requirements.
 
 Before provisioning, the remaining owner-specific values are: AWS plan/credit expiry, region, hostname/DNS access, owner email, feedback form URL, and Chrome developer account/extension ID. These are configuration and release dependencies, not reasons to delay the local implementation.
-

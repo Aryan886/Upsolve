@@ -8,7 +8,7 @@ import { EmailSchema } from "@cp-notes/shared";
 import { hashPassword, hashToken } from "./auth.js";
 import { createBackup } from "./backup.js";
 import { NotesDatabase } from "./database.js";
-import { defaultDatabasePath, readInvitationConfig } from "./config.js";
+import { defaultDatabasePath, readBetaSignupConfig, readInvitationConfig } from "./config.js";
 
 function readPassword(label: string): Promise<string> {
   if (!process.stdin.isTTY) throw new Error("Use an interactive terminal for the hidden password prompt");
@@ -82,8 +82,12 @@ export async function runAdmin(
   outputInvitation: (message: string) => Promise<void> = writeInvitation,
 ): Promise<void> {
   const [command, rawEmail, ...extra] = argumentsList;
-  if (!command || !["init", "create", "reset", "disable", "benchmark", "invite", "revoke-invite"].includes(command) || extra.length) {
-    throw new Error("Usage: admin <init|create|reset|disable|invite|revoke-invite> <email>, or admin benchmark. Passwords and tokens are never arguments.");
+  const accountCommands = ["init", "create", "reset", "disable", "invite", "revoke-invite"];
+  const noArgumentCommands = ["benchmark", "beta-link", "beta-status", "revoke-beta-link"];
+  const needsEmail = command !== undefined && accountCommands.includes(command);
+  const takesNoArguments = command !== undefined && noArgumentCommands.includes(command);
+  if (!command || (!needsEmail && !takesNoArguments) || (needsEmail && (!rawEmail || extra.length > 0)) || (takesNoArguments && rawEmail !== undefined)) {
+    throw new Error("Usage: admin <init|create|reset|disable|invite|revoke-invite> <email>, or admin <benchmark|beta-link|beta-status|revoke-beta-link>. Passwords and tokens are never arguments.");
   }
   if (command === "benchmark") {
     if (rawEmail) throw new Error("benchmark takes no arguments");
@@ -92,8 +96,34 @@ export async function runAdmin(
     console.log(`scrypt N=32768 r=8 p=3: ${Math.round(performance.now() - start)} ms; memory limit 64 MiB/job; maximum two jobs`);
     return;
   }
-  const email = EmailSchema.parse(rawEmail);
   const path = resolve(environment.DATABASE_PATH ?? defaultDatabasePath);
+  if (command === "beta-link") {
+    const config = readBetaSignupConfig(environment);
+    const token = randomBytes(32).toString("base64url");
+    const expiresAt = new Date(Date.now() + config.betaSignupHours * 3_600_000).toISOString();
+    const database = new NotesDatabase(path, { existingOnly: true });
+    let status;
+    try { status = database.issueBetaSignup(hashToken(token), expiresAt); }
+    finally { database.close(); }
+    try {
+      await outputInvitation(`Shared beta signup link: ${config.appOrigin}/#beta=${token}\nExpires: ${expiresAt}\nSignups: ${status.signupCount} / ${status.maxSignups}\nShare privately. Reissuing replaces the previous link and preserves usage.`);
+    } catch (error) {
+      throw new Error("Shared beta link output failed. Issue a replacement link before sharing it.", { cause: error });
+    }
+    return;
+  }
+  if (command === "beta-status" || command === "revoke-beta-link") {
+    const database = new NotesDatabase(path, { existingOnly: true });
+    try {
+      if (command === "revoke-beta-link") console.log(database.revokeBetaSignup() ? "Shared beta signup link revoked" : "No active shared beta signup link");
+      else {
+        const status = database.getBetaStatus();
+        console.log(`Shared beta signup: ${status.state}; ${status.signupCount} / ${status.maxSignups} signups; ${status.remainingSignups} remaining; expires: ${status.expiresAt ?? "not issued"}`);
+      }
+    } finally { database.close(); }
+    return;
+  }
+  const email = EmailSchema.parse(rawEmail);
   if (command === "invite") {
     const config = readInvitationConfig(environment);
     const token = randomBytes(32).toString("base64url");

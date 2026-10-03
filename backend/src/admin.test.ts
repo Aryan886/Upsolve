@@ -25,6 +25,14 @@ function environmentFor(path: string): NodeJS.ProcessEnv {
   return { DATABASE_PATH: path, LOCAL_DEVELOPMENT: "true", APP_ORIGIN: "http://localhost:5173" };
 }
 
+async function issueBetaLink(path: string, settings: NodeJS.ProcessEnv = {}): Promise<{ token: string; message: string }> {
+  let message = "";
+  await runAdmin(["beta-link"], { ...environmentFor(path), ...settings }, async (output) => { message = output; });
+  const token = /#beta=([A-Za-z0-9_-]{43})/.exec(message)?.[1];
+  if (!token) throw new Error("Beta command did not produce a link");
+  return { token, message };
+}
+
 async function issueInvitation(path: string, email: string, settings: NodeJS.ProcessEnv = {}): Promise<{ token: string; message: string }> {
   let message = "";
   await runAdmin(["invite", email], { ...environmentFor(path), ...settings }, async (output) => { message = output; });
@@ -79,6 +87,58 @@ it("issues a normalized, expiring invitation without creating a user or storing 
   expect(invitation.message).toContain("Share privately");
   expect(invitation.message).toContain("Reissuing replaces");
   expect(invitation.message.match(/#invite=/g)).toHaveLength(1);
+});
+
+it("issues, reports, rotates and revokes a shared beta link without resetting usage", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2030-01-01T00:00:00.000Z"));
+  const path = initializeDatabase();
+  const first = await issueBetaLink(path);
+  expect(first.message).toContain("2030-01-08T00:00:00.000Z");
+  expect(first.message).toContain("0 / 30");
+  const database = new NotesDatabase(path, { existingOnly: true });
+  try {
+    database.acceptBetaSignup(hashToken(first.token), "first@example.com", "stored hash");
+    const next = await issueBetaLink(path, { BETA_SIGNUP_HOURS: "2" });
+    expect(next.token).not.toBe(first.token);
+    expect(next.message).toContain("1 / 30");
+    expect(next.message).toContain("2030-01-01T02:00:00.000Z");
+    expect(database.getBetaSignup(hashToken(first.token))).toBeNull();
+    const output = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    await runAdmin(["beta-status"], { DATABASE_PATH: path });
+    expect(output).toHaveBeenLastCalledWith(expect.stringContaining("open; 1 / 30 signups; 29 remaining"));
+    expect(JSON.stringify(output.mock.calls)).not.toContain(next.token);
+    await runAdmin(["revoke-beta-link"], { DATABASE_PATH: path });
+    expect(database.getBetaSignup(hashToken(next.token))).toBeNull();
+    await runAdmin(["revoke-beta-link"], { DATABASE_PATH: path });
+    expect(output).toHaveBeenLastCalledWith("No active shared beta signup link");
+    expect(database.getBetaStatus()).toMatchObject({ state: "revoked", signupCount: 1 });
+  } finally { database.close(); }
+});
+
+it("validates beta CLI arguments and configuration before changing the active link", async () => {
+  const path = initializeDatabase();
+  const first = await issueBetaLink(path);
+  for (const args of [["beta-link", "email@example.com"], ["beta-status", "extra"], ["revoke-beta-link", "extra"]]) {
+    await expect(runAdmin(args, environmentFor(path))).rejects.toThrow("Usage");
+  }
+  for (const settings of [{ APP_ORIGIN: "http://example.test" }, { BETA_SIGNUP_HOURS: "169" }, { BETA_SIGNUP_HOURS: "" }]) {
+    await expect(issueBetaLink(path, settings)).rejects.toThrow();
+  }
+  const database = new NotesDatabase(path, { existingOnly: true });
+  try { expect(database.getBetaSignup(hashToken(first.token))).not.toBeNull(); }
+  finally { database.close(); }
+  const missing = join(directory, "missing.db");
+  await expect(issueBetaLink(missing)).rejects.toThrow();
+  expect(existsSync(missing)).toBe(false);
+  await expect(runAdmin(["beta-status"], { DATABASE_PATH: missing })).rejects.toThrow();
+});
+
+it("reports a failed shared-link output and leaves replacement possible", async () => {
+  const path = initializeDatabase();
+  await expect(runAdmin(["beta-link"], environmentFor(path), async () => { throw new Error("broken output"); }))
+    .rejects.toThrow("Shared beta link output failed");
+  expect((await issueBetaLink(path)).token).toMatch(/^[A-Za-z0-9_-]{43}$/);
 });
 
 it("uses a configured lifetime and invalidates the prior link on reissue", async () => {

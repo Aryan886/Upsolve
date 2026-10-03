@@ -93,10 +93,10 @@ Create the following file once, then update it when the hostname, feedback URL, 
   cat > "$HOME/cp-notes-release.env" <<'ENV'
 export VITE_BACKEND_URL=https://upsolve-aryan.duckdns.org/api
 export VITE_FEEDBACK_URL=https://forms.gle/gMguWCkcyMkANWFu9
-export VITE_EXTENSION_ID=fckglphbjgnekemeihehbelacnlagfme
-# Add these when the public manifest key and store install link are available:
+export VITE_EXTENSION_ID=gdfdnapanhndofblljbgfppndhdlioko
+# Add the public manifest key if the published store package uses one:
 # export VITE_EXTENSION_KEY='PUBLIC_MANIFEST_KEY_ON_ONE_LINE'
-# export VITE_EXTENSION_INSTALL_URL='https://chromewebstore.google.com/detail/ITEM'
+export VITE_EXTENSION_INSTALL_URL='https://chromewebstore.google.com/detail/cp-notes/gdfdnapanhndofblljbgfppndhdlioko'
 ENV
 )
 ```
@@ -141,7 +141,7 @@ Replace `PASTE_FULL_COMMIT_HASH` below. Keep one update in progress at a time. T
 (
   set -euo pipefail
   umask 077
-  RELEASE_COMMIT='PASTE_FULL_COMMIT_HASH'
+  RELEASE_COMMIT='0a3684e7187ca44fe1f46f3ec4112e5c35d5820fa'
   [[ "$RELEASE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
   test -f "$HOME/cp-notes-release.env"
   PREVIOUS_RELEASE=$(readlink -f /opt/cp-notes/current)
@@ -509,6 +509,27 @@ sudo -u cp-notes /opt/node/bin/node --env-file=/etc/cp-notes/app.env \
 
 `reset` prompts for a hidden password; it and `disable` revoke sessions. An existing account uses reset rather than an invitation; resetting does not re-enable a disabled account. If the active CLI reports that `invite` is unknown, the server still runs an older release: deploy the invitation commit first. Running a new admin CLI against the old live database can itself trigger migration, so only use the active deployed version.
 
+## 10A. Shared beta signup after the schema-4 release
+
+The current schema-3 server rejects schema 4. **Before the new server or any new compiled admin command opens the live database**, stop writes and the backup timer, take a SQLite-aware pre-migration backup, verify integrity and foreign keys, restore it independently with the matching schema-3 release, and retain an off-server copy. Use the existing backup and release steps above. Do not issue the shared link as the first upgrade step. A code-only rollback to schema 3 is incompatible; restoring the pre-migration backup can lose later notes and accounts.
+
+The operator command has no email argument. Run it only from the active schema-4 release, after checking HTTPS, login, notes, and the [published extension install link](https://chromewebstore.google.com/detail/cp-notes/gdfdnapanhndofblljbgfppndhdlioko) in the website onboarding:
+
+```bash
+sudo -u cp-notes /opt/node/bin/node --env-file=/etc/cp-notes/app.env \
+  /opt/cp-notes/current/backend/dist/admin.js beta-link
+sudo -u cp-notes /opt/node/bin/node --env-file=/etc/cp-notes/app.env \
+  /opt/cp-notes/current/backend/dist/admin.js beta-status
+sudo -u cp-notes /opt/node/bin/node --env-file=/etc/cp-notes/app.env \
+  /opt/cp-notes/current/backend/dist/admin.js revoke-beta-link
+```
+
+`beta-link` prints the shared setup link once. Deliver it privately to the intended beta group. Anyone with a forwarded link can claim a remaining spot; the app does not verify email ownership. The link expires after seven days by default. `BETA_SIGNUP_HOURS` in `/etc/cp-notes/app.env` accepts 1–168 hours for newly issued links. A new link invalidates the previous one but keeps the signup count. The counter admits at most 30 accounts created through shared signup; manually created and individually invited accounts are separate. `beta-status` shows usage without disclosing the token. Revocation closes new registration and leaves existing accounts usable.
+
+For a live smoke test, use an intended beta tester's account and count it as one of the 30. Verify signup, ordinary website sign-in, store installation, extension sign-in, a saved note, and its website display. Then check `beta-status` before sending the link more widely. Do not reset the production counter after testing. If setup receives an uncertain response, the tester should try sign-in before submitting again.
+
+Restoring an older backup may lower the counter and revive a previous link. Keep registration closed after restoration, revoke the restored link, and reconcile prior admitted accounts before issuing a replacement. If the used count cannot be established, do not reopen registration.
+
 ## 11. Extension releases are separate from website updates
 
 | Change | Deployment action |
@@ -562,7 +583,7 @@ if ($LASTEXITCODE -ne 0) { throw "Extension download failed." }
 - **Trusted unpacked testers:** extract into their existing extension folder and click **Reload** at `chrome://extensions`. First installation uses Developer mode → Load unpacked → the folder containing `manifest.json`. Keep the folder and public key stable; removing/reinstalling the extension can lose its locally stored drafts/session. Finish or preserve drafts before an update. Updates are manual.
 - **Chrome Web Store:** upload the new ZIP to the **existing** store item, update disclosures/screenshots as needed, submit for review, and publish after approval. Do not create a new store item for each update. See [Chrome's update instructions](https://developer.chrome.com/docs/webstore/update) and [our store checklist](STORE_LISTING.md). A website deployment alone does not update installed extensions.
 
-When a store install link is available, add it as `VITE_EXTENSION_INSTALL_URL` in the public build settings and rebuild/redeploy the website. It will appear in the existing onboarding UI. Store review and the website's Safe Browsing review are separate processes.
+The verified store URL is recorded in the public build settings above as `VITE_EXTENSION_INSTALL_URL`. Rebuild and redeploy the website to show it in the existing onboarding UI; confirm the actual link after deployment. Store review and the website's Safe Browsing review are separate processes.
 
 ## 12. Quick troubleshooting
 

@@ -7,7 +7,7 @@ const config = readConfig(process.env);
 if (!config.existingOnly) mkdirSync(dirname(config.databasePath), { recursive: true, mode: 0o700 });
 const { app, close } = createApp(config);
 const server = app.listen(config.port, "127.0.0.1", () => {
-  console.log(`CP Notes listening on loopback port ${config.port}; schema 3`);
+  console.log(`CP Notes listening on loopback port ${config.port}; schema 4`);
 });
 server.on("error", (error) => {
   console.error("HTTP server failed:", error.message);

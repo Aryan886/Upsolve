@@ -1,6 +1,6 @@
 import { createHash, randomBytes, scrypt, timingSafeEqual } from "node:crypto";
 import { Router, type Request, type Response } from "express";
-import { ChangePasswordSchema, InvitationAcceptSchema, InvitationInspectSchema, INVITATION_INVALID_MESSAGE, LoginSchema, PasswordSchema, type User } from "@cp-notes/shared";
+import { BETA_ACCOUNT_UNAVAILABLE_MESSAGE, BETA_UNAVAILABLE_MESSAGE, BetaAcceptSchema, BetaInspectSchema, ChangePasswordSchema, InvitationAcceptSchema, InvitationInspectSchema, INVITATION_INVALID_MESSAGE, LoginSchema, PasswordSchema, type User } from "@cp-notes/shared";
 import type { NotesDatabase } from "./database.js";
 import { AppError } from "./errors.js";
 
@@ -143,6 +143,32 @@ export function createAuth(database: NotesDatabase, options: AuthOptions) {
     if (!database.getInvitation(tokenHash)) throw new AppError(400, "invitation_invalid", INVITATION_INVALID_MESSAGE);
     const passwordHash = await hashPassword(input.data.password);
     response.status(201).json({ data: database.acceptInvitation(tokenHash, passwordHash) });
+  });
+  function limitBetaRequests(request: Request, isAcceptance: boolean): void {
+    requireWebsiteOrigin(request);
+    const address = request.ip ?? "unknown";
+    throttle(`beta-ip:${address}`, 120, "Too many beta signup requests. Try again in 15 minutes.");
+    if (isAcceptance) throttle(`beta-accept-ip:${address}`, 40, "Too many beta signup attempts. Try again in 15 minutes.");
+  }
+
+  router.post("/beta/inspect", (request, response) => {
+    limitBetaRequests(request, false);
+    const input = BetaInspectSchema.safeParse(request.body);
+    if (!input.success) throw new AppError(400, "validation_error", "The request is invalid");
+    const signup = database.getBetaSignup(hashToken(input.data.token));
+    if (!signup) throw new AppError(400, "beta_unavailable", BETA_UNAVAILABLE_MESSAGE);
+    response.json({ data: signup });
+  });
+  router.post("/beta/accept", async (request, response) => {
+    limitBetaRequests(request, true);
+    const input = BetaAcceptSchema.safeParse(request.body);
+    if (!input.success) throw new AppError(400, "validation_error", "The request is invalid");
+    const tokenHash = hashToken(input.data.token);
+    throttle(`beta-account:${tokenHash}:${input.data.email}`, 5, "Too many beta signup attempts. Try again in 15 minutes.");
+    if (!database.getBetaSignup(tokenHash)) throw new AppError(400, "beta_unavailable", BETA_UNAVAILABLE_MESSAGE);
+    if (database.getUserByEmail(input.data.email)) throw new AppError(400, "beta_account_unavailable", BETA_ACCOUNT_UNAVAILABLE_MESSAGE);
+    const passwordHash = await hashPassword(input.data.password);
+    response.status(201).json({ data: database.acceptBetaSignup(tokenHash, input.data.email, passwordHash) });
   });
   router.get("/me", (request, response) => response.json({ data: session(request).user }));
   router.post("/logout", (request, response) => {

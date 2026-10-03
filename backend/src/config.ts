@@ -27,12 +27,21 @@ export function readAppOrigin(environment: NodeJS.ProcessEnv): string {
   return appOrigin;
 }
 
-export function readInvitationConfig(environment: NodeJS.ProcessEnv): { appOrigin: string; invitationHours: number } {
+function readLinkOrigin(environment: NodeJS.ProcessEnv): string {
   const appOrigin = readAppOrigin(environment);
   if (new URL(appOrigin).protocol !== "https:" && environment.LOCAL_DEVELOPMENT !== "true") {
-    throw new Error("Invitation links require HTTPS, or explicit LOCAL_DEVELOPMENT=true with a loopback APP_ORIGIN");
+    throw new Error("Account setup links require HTTPS, or explicit LOCAL_DEVELOPMENT=true with a loopback APP_ORIGIN");
   }
+  return appOrigin;
+}
+
+export function readInvitationConfig(environment: NodeJS.ProcessEnv): { appOrigin: string; invitationHours: number } {
+  const appOrigin = readLinkOrigin(environment);
   return { appOrigin, invitationHours: integer(environment.INVITATION_HOURS, 72, "INVITATION_HOURS", 168) };
+}
+
+export function readBetaSignupConfig(environment: NodeJS.ProcessEnv): { appOrigin: string; betaSignupHours: number } {
+  return { appOrigin: readLinkOrigin(environment), betaSignupHours: integer(environment.BETA_SIGNUP_HOURS, 168, "BETA_SIGNUP_HOURS", 168) };
 }
 
 export function readConfig(environment: NodeJS.ProcessEnv) {

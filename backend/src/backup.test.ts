@@ -27,7 +27,7 @@ it("restores a live WAL backup with sessions, notes, search and ownership", asyn
   } finally { source.close(); }
 });
 
-it("restores schema-3 invitations independently and revokes links revived by an older backup", async () => {
+it("restores schema-4 invitations independently and revokes links revived by an older backup", async () => {
   const sourcePath = join(directory, "source.db");
   const source = new NotesDatabase(sourcePath);
   const expiresAt = new Date(Date.now() + 60_000).toISOString();
@@ -39,7 +39,7 @@ it("restores schema-3 invitations independently and revokes links revived by an 
     const backupPath = await createBackup(sourcePath, join(directory, "backups"));
     const snapshot = new Database(backupPath, { readonly: true, fileMustExist: true });
     try {
-      expect(snapshot.pragma("user_version", { simple: true })).toBe(3);
+      expect(snapshot.pragma("user_version", { simple: true })).toBe(4);
       expect(snapshot.pragma("integrity_check", { simple: true })).toBe("ok");
       expect(snapshot.pragma("foreign_key_check")).toEqual([]);
     } finally { snapshot.close(); }

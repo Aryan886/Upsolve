@@ -21,7 +21,7 @@ function fillPassword(password = "a long password", confirmation = password): vo
 }
 
 async function showForm(onAccepted = vi.fn(), onSignIn = vi.fn()) {
-  const view = render(<InvitationForm entry={{ token }} onAccepted={onAccepted} onSignIn={onSignIn} />);
+  const view = render(<InvitationForm entry={{ kind: "invitation", token }} onAccepted={onAccepted} onSignIn={onSignIn} />);
   await screen.findByRole("button", { name: "Create account" });
   return view;
 }
@@ -29,7 +29,7 @@ async function showForm(onAccepted = vi.fn(), onSignIn = vi.fn()) {
 it("inspects before showing fixed email and labeled new-password controls", async () => {
   let finish: (value: typeof invitation) => void = () => undefined;
   vi.mocked(inspectInvitation).mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
-  render(<InvitationForm entry={{ token }} onAccepted={vi.fn()} onSignIn={vi.fn()} />);
+  render(<InvitationForm entry={{ kind: "invitation", token }} onAccepted={vi.fn()} onSignIn={vi.fn()} />);
   expect(screen.getByRole("status")).toHaveTextContent("Checking your invitation");
   expect(screen.queryByLabelText("Password")).not.toBeInTheDocument();
   await act(async () => { finish(invitation); });
@@ -116,7 +116,7 @@ it("provides the same sign-in recovery when a retry finds the link already used"
 });
 
 it("does not inspect malformed links or echo their contents", () => {
-  render(<InvitationForm entry={{ invalid: true }} onAccepted={vi.fn()} onSignIn={vi.fn()} />);
+  render(<InvitationForm entry={{ kind: "invalid" }} onAccepted={vi.fn()} onSignIn={vi.fn()} />);
   expect(screen.getByRole("alert")).toHaveTextContent(INVITATION_INVALID_MESSAGE);
   expect(inspectInvitation).not.toHaveBeenCalled();
   expect(screen.getByRole("button", { name: "Go to sign in" })).toBeInTheDocument();
@@ -125,7 +125,7 @@ it("does not inspect malformed links or echo their contents", () => {
 it("shows generic invalid-link recovery without revealing identity", async () => {
   vi.mocked(inspectInvitation).mockRejectedValueOnce(new ApiError("invitation_invalid", INVITATION_INVALID_MESSAGE, undefined, 400));
   const onSignIn = vi.fn();
-  render(<InvitationForm entry={{ token }} onAccepted={vi.fn()} onSignIn={onSignIn} />);
+  render(<InvitationForm entry={{ kind: "invitation", token }} onAccepted={vi.fn()} onSignIn={onSignIn} />);
   expect(await screen.findByRole("alert")).toHaveTextContent(INVITATION_INVALID_MESSAGE);
   expect(screen.queryByText(invitation.email)).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Retry invitation check" })).not.toBeInTheDocument();
@@ -136,7 +136,7 @@ it("shows generic invalid-link recovery without revealing identity", async () =>
 it("retries an inspection service failure without consuming the invitation", async () => {
   vi.mocked(inspectInvitation).mockRejectedValueOnce(new ApiError("service_unavailable", "Temporarily unavailable"))
     .mockResolvedValueOnce(invitation);
-  render(<InvitationForm entry={{ token }} onAccepted={vi.fn()} onSignIn={vi.fn()} />);
+  render(<InvitationForm entry={{ kind: "invitation", token }} onAccepted={vi.fn()} onSignIn={vi.fn()} />);
   fireEvent.click(await screen.findByRole("button", { name: "Retry invitation check" }));
   await screen.findByRole("button", { name: "Create account" });
   expect(inspectInvitation).toHaveBeenCalledTimes(2);
@@ -146,7 +146,7 @@ it("retries an inspection service failure without consuming the invitation", asy
 it("ignores delayed inspection and acceptance results after unmount", async () => {
   let finishInspect: (value: typeof invitation) => void = () => undefined;
   vi.mocked(inspectInvitation).mockImplementationOnce(() => new Promise((resolve) => { finishInspect = resolve; }));
-  const first = render(<InvitationForm entry={{ token }} onAccepted={vi.fn()} onSignIn={vi.fn()} />);
+  const first = render(<InvitationForm entry={{ kind: "invitation", token }} onAccepted={vi.fn()} onSignIn={vi.fn()} />);
   const inspectSignal = vi.mocked(inspectInvitation).mock.calls[0]?.[1];
   first.unmount();
   expect(inspectSignal?.aborted).toBe(true);

@@ -74,7 +74,7 @@ it("requires an explicit legacy owner and preserves IDs, links and content", () 
   expect(reopened.listFeed(1, { page: 1, limit: 20 }).meta.total).toBe(4);
   reopened.close();
   const source = new Database(path);
-  expect(source.pragma("user_version", { simple: true })).toBe(3);
+  expect(source.pragma("user_version", { simple: true })).toBe(4);
   source.close();
 });
 
@@ -94,7 +94,7 @@ it("initializes empty databases but rejects missing expected files and newer sch
   database.close();
   const source = new Database(path);
   expect(source.pragma("foreign_key_check")).toEqual([]);
-  expect(source.pragma("user_version", { simple: true })).toBe(3);
+  expect(source.pragma("user_version", { simple: true })).toBe(4);
   expect(source.prepare("PRAGMA table_info(invitations)").all()).toMatchObject([
     { name: "email", type: "TEXT", notnull: 1, pk: 1 },
     { name: "token_hash", type: "TEXT", notnull: 1 },
@@ -134,8 +134,8 @@ it("upgrades populated schema 2 without rewriting users, sessions, notes or link
     const source = new Database(path);
     try {
       expect(existingRows(source)).toEqual(rows);
-      expect(source.prepare("SELECT name, sql FROM sqlite_master WHERE sql IS NOT NULL AND name != 'invitations' ORDER BY name").all()).toEqual(schema);
-      expect(source.pragma("user_version", { simple: true })).toBe(3);
+      expect(source.prepare("SELECT name, sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT IN ('invitations', 'beta_signup') ORDER BY name").all()).toEqual(schema);
+      expect(source.pragma("user_version", { simple: true })).toBe(4);
       expect(source.pragma("foreign_key_check")).toEqual([]);
       expect(source.pragma("journal_mode", { simple: true })).toBe("wal");
     } finally { source.close(); }
@@ -165,6 +165,52 @@ it("rolls back schema-3 DDL and its version when migration fails after advancing
     expect(existingRows(source)).toEqual(rows);
     expect(source.pragma("foreign_key_check")).toEqual([]);
   } finally { source.close(); }
+});
+
+it("upgrades schema 3 to 4 without changing existing accounts, notes, sessions or invitations", () => {
+  schemaTwo();
+  const source = new Database(path);
+  source.exec(`CREATE TABLE invitations (email TEXT PRIMARY KEY NOT NULL, token_hash TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL, expires_at TEXT NOT NULL);
+    INSERT INTO invitations VALUES ('new@example.com', 'old invitation hash', '2026-01-01', '2099-01-01');
+    PRAGMA user_version = 3;`);
+  const rows = existingRows(source);
+  const invitation = source.prepare("SELECT * FROM invitations").get();
+  source.close();
+  const upgraded = new NotesDatabase(path, { existingOnly: true });
+  try {
+    expect(upgraded.getBetaStatus()).toMatchObject({ state: "not issued", signupCount: 0, remainingSignups: 30 });
+    expect(upgraded.getInvitation("old invitation hash")?.email).toBe("new@example.com");
+    expect(upgraded.getSession("website hash", "website")?.id).toBe(7);
+    const check = new Database(path);
+    try {
+      expect(check.pragma("user_version", { simple: true })).toBe(4);
+      expect(existingRows(check)).toEqual(rows);
+      expect(check.prepare("SELECT * FROM invitations").get()).toEqual(invitation);
+      expect(check.pragma("foreign_key_check")).toEqual([]);
+    } finally { check.close(); }
+  } finally { upgraded.close(); }
+});
+
+it("rolls back schema-4 DDL and version together on migration failure", () => {
+  schemaTwo();
+  const source = new Database(path);
+  source.exec(`CREATE TABLE invitations (email TEXT PRIMARY KEY NOT NULL, token_hash TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL, expires_at TEXT NOT NULL);
+    PRAGMA user_version = 3;`);
+  source.close();
+  const pragma = Database.prototype.pragma;
+  const failure = vi.spyOn(Database.prototype, "pragma").mockImplementation(function (this: Database.Database, sql: string, options?: Database.PragmaOptions) {
+    const result = pragma.call(this, sql, options);
+    if (sql === "user_version = 4") throw new Error("Synthetic beta migration failure");
+    return result;
+  });
+  expect(() => new NotesDatabase(path, { existingOnly: true })).toThrow("Synthetic beta migration failure");
+  failure.mockRestore();
+  const check = new Database(path);
+  try {
+    expect(check.pragma("user_version", { simple: true })).toBe(3);
+    expect(check.prepare("SELECT name FROM sqlite_master WHERE name = 'beta_signup'").get()).toBeUndefined();
+    expect(check.prepare("SELECT name FROM sqlite_master WHERE name = 'invitations'").get()).toBeDefined();
+  } finally { check.close(); }
 });
 
 it("issues only a stored hash, normalizes email and replaces the previous invitation", () => {

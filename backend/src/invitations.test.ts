@@ -69,6 +69,30 @@ function finishPassword(): void {
   callback(null, Buffer.alloc(64));
 }
 
+it.each(["rotate", "revoke", "expire", "existing", "full"] as const)("rechecks shared beta %s after password hashing", async (change) => {
+  const betaToken = randomBytes(32).toString("base64url");
+  context.database.issueBetaSignup(hashToken(betaToken), new Date(Date.now() + 60_000).toISOString());
+  passwordControl.paused = true;
+  const started = new Promise<void>((resolve) => { passwordControl.onStart = resolve; });
+  const response = request(context.app).post("/api/auth/beta/accept").set("Origin", origin)
+    .send({ token: betaToken, email: "pending@example.com", password }).then((result) => result);
+  pendingResponses.push(response);
+  await started;
+  if (change === "rotate") context.database.issueBetaSignup(hashToken(randomBytes(32).toString("base64url")), new Date(Date.now() + 60_000).toISOString());
+  if (change === "revoke") context.database.revokeBetaSignup();
+  if (change === "expire") context.database.issueBetaSignup(hashToken(betaToken), new Date(Date.now() - 1).toISOString());
+  if (change === "existing") context.database.createUser("pending@example.com", "manual hash");
+  if (change === "full") {
+    for (let number = 1; number <= 30; number++) context.database.acceptBetaSignup(hashToken(betaToken), `earlier${number}@example.com`, "stored hash");
+  }
+  finishPassword();
+  const result = await response;
+  expect(result.status).toBe(400);
+  expect(result.body.error.code).toBe(change === "existing" ? "beta_account_unavailable" : change === "full" ? "beta_full" : "beta_unavailable");
+  expect(context.database.getUserByEmail("pending@example.com")?.passwordHash).toBe(change === "existing" ? "manual hash" : undefined);
+  expect(context.database.getBetaStatus().signupCount).toBe(change === "full" ? 30 : 0);
+});
+
 it("inspects repeatedly, accepts without a session, and supports ordinary website/extension login", async () => {
   const token = invite();
   for (let count = 0; count < 2; count++) {
