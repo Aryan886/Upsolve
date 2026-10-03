@@ -11,7 +11,7 @@ WorkingDirectory=/opt/cp-notes/current
 EnvironmentFile=/etc/cp-notes/app.env
 EnvironmentFile=/etc/cp-notes/backup.env
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
-ExecStart=/opt/node/bin/node /opt/cp-notes/current/backend/dist/backup.js
+ExecStart=/opt/node/bin/node --preserve-symlinks-main /opt/cp-notes/current/backend/dist/backup.js
 TimeoutStartSec=10min
 UMask=0077
 NoNewPrivileges=true

@@ -86,8 +86,8 @@ Create `/opt/cp-notes/current` pointing to the verified release and start `cp-no
 After migration/startup verification, issue a private invitation through the compiled CLI. The interactive CLI does not inherit systemd's environment; explicitly load the protected runtime file:
 
 ```bash
-sudo -u cp-notes /opt/node/bin/node --env-file=/etc/cp-notes/app.env /opt/cp-notes/current/backend/dist/admin.js invite tester@example.com
-sudo -u cp-notes /opt/node/bin/node --env-file=/etc/cp-notes/app.env /opt/cp-notes/current/backend/dist/admin.js revoke-invite tester@example.com
+sudo -u cp-notes /opt/node/bin/node --env-file=/etc/cp-notes/app.env "$(readlink -f /opt/cp-notes/current)/backend/dist/admin.js" invite tester@example.com
+sudo -u cp-notes /opt/node/bin/node --env-file=/etc/cp-notes/app.env "$(readlink -f /opt/cp-notes/current)/backend/dist/admin.js" revoke-invite tester@example.com
 ```
 
 Neither command prompts for a password or accepts an additional password/token argument. The database must already exist and be initialized. `invite` validates and normalizes the email, validates `APP_ORIGIN` and optional `INVITATION_HOURS`, then stores only a SHA-256 hash of a random 32-byte token. The output contains the fixed email, authoritative expiry and `https://YOUR_HOSTNAME/#invite=<random-token>` once, after commit. Keep that output out of persistent logs, tickets, screenshots and source control. Deliver it privately to the intended person: possession permits account setup and is not proof of mailbox ownership.
@@ -100,7 +100,7 @@ If acceptance is interrupted, the account may already exist. Tell the tester to 
 
 ## Shared beta signup operations
 
-Once schema 4 is deployed and verified, run `admin.js beta-link`, `admin.js beta-status`, or `admin.js revoke-beta-link` with the same `sudo -u cp-notes /opt/node/bin/node --env-file=/etc/cp-notes/app.env /opt/cp-notes/current/backend/dist/admin.js` prefix used above. The shared link is printed only on issue/reissue. It expires after seven days by default (`BETA_SIGNUP_HOURS`, 1–168), admits 30 successfully created accounts across all reissues, and can be revoked without affecting current users. Status shows usage but never the token. Existing accounts and individual invitations are outside its count. A tester enters an email/password, signs in normally, then follows onboarding to the [published extension](https://chromewebstore.google.com/detail/cp-notes/gdfdnapanhndofblljbgfppndhdlioko).
+Schema 4 was deployed on October 3. Run `admin.js beta-link`, `admin.js beta-status`, or `admin.js revoke-beta-link` with the same `sudo -u cp-notes /opt/node/bin/node --env-file=/etc/cp-notes/app.env "$(readlink -f /opt/cp-notes/current)/backend/dist/admin.js"` prefix used above. Resolve `current`: the compiled CLI can exit without running when invoked through the symlink. The shared link is printed only on issue/reissue. It expires after seven days by default (`BETA_SIGNUP_HOURS`, 1–168), admits 30 successfully created accounts across all reissues, and can be revoked without affecting current users. Status shows usage but never the token. Existing accounts and individual invitations are outside its count. A tester enters an email/password, signs in normally, then follows onboarding to the [published extension](https://chromewebstore.google.com/detail/cp-notes/gdfdnapanhndofblljbgfppndhdlioko).
 
 ## Repeatable updates and rollback
 

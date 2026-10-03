@@ -2,11 +2,11 @@
 
 A private competitive programming diary for invited testers. The Chrome extension captures patterns, mistakes, snippets, and editorial takeaways from LeetCode, Codeforces, CodeChef, AtCoder, or manually entered problems. The website provides search, a timeline, mistake statistics, editing, and deletion.
 
-The website is running on an Amazon Linux 2023 Lightsail instance at <https://upsolve-aryan.duckdns.org>, and the [extension is published in the Chrome Web Store](https://chromewebstore.google.com/detail/cp-notes/gdfdnapanhndofblljbgfppndhdlioko). Use the [Lightsail deployment and update runbook](deploy/LIGHTSAIL_RUNBOOK.md) for the actual server layout, repeatable updates, backups, rollback, invitations, and extension releases. Local changes reach the site only after deployment. Live backup/recovery verification remains a release task; see [deployment and recovery](deploy/README.md), [release checklist](deploy/RELEASE_CHECKLIST.md), and [build plan](AWS_BUILD_PLAN.md).
+The website is running on an Amazon Linux 2023 Lightsail instance at <https://upsolve-aryan.duckdns.org>, and the [extension is published in the Chrome Web Store](https://chromewebstore.google.com/detail/cp-notes/gdfdnapanhndofblljbgfppndhdlioko). Use the [Lightsail deployment and update runbook](deploy/LIGHTSAIL_RUNBOOK.md) for the actual server layout, repeatable updates, backups, rollback, invitations, and extension releases. Local changes reach the site only after deployment. Manual production backups were restored and downloaded during the October 3 shared beta rollout; scheduled private S3 backups still need setup. See [deployment and recovery](deploy/README.md), [release checklist](deploy/RELEASE_CHECKLIST.md), and [build plan](AWS_BUILD_PLAN.md).
 
 Invitation-only account setup follows the [invitation links implementation plan](INVITATION_LINKS_PLAN.md). Operators issue private, expiring links; testers choose their own passwords and then use ordinary sign-in. There is no public signup or email delivery service.
 
-The [shared beta signup flow](SHARED_BETA_SIGNUP_PLAN.md) is implemented locally: one reusable link admits up to 30 new accounts, with the used count preserved across link replacements. Production migration and live verification are still pending.
+The [shared beta signup flow](SHARED_BETA_SIGNUP_PLAN.md) is deployed: one reusable link admits up to 30 new accounts, with the used count preserved across link replacements. The October 3 rollout verified schema 4, backups, restart persistence, and the live signup page with 30 available spots. The first real tester's signup and extension capture remain to be exercised; see the [release evidence](deploy/RELEASE_CHECKLIST.md#shared-beta-lightsail-rollout-2026-10-03).
 
 The website includes a public `/privacy` page, linked from the footer and available without an account or authentication request. Its source is `website/src/pages/PrivacyPage.tsx`. Deploy both the backend route and website build, then verify `/privacy` in a signed-out browser before entering `https://upsolve-aryan.duckdns.org/privacy` in the Chrome Web Store. Local implementation does not make that URL live. Review the policy whenever contact details, providers, data handling, or backup retention change.
 
@@ -54,7 +54,7 @@ The cap is **30 successful accounts created through the shared link**. Existing 
 
 The link's `#beta=` fragment is removed from the browser address bar and held only in page memory. Refreshing setup requires reopening the original link. An interrupted signup might have completed: try ordinary sign-in before submitting again. The extension uses the existing login API and does not need a new store release for this feature.
 
-**Before a production schema-3 database is opened by schema-4 code or any new compiled admin command, take and independently verify a SQLite-aware backup.** The schema-3 server cannot open schema 4. Follow the [Lightsail runbook](deploy/LIGHTSAIL_RUNBOOK.md#10a-shared-beta-signup-after-the-schema-4-release) for production commands and rollout. Local code and tests do not make the shared link live.
+The October 3 production migration to schema 4 used an independently restored SQLite-aware backup. If upgrading another schema-3 database, take and verify such a backup before opening it with schema-4 code. The schema-3 server cannot open schema 4. Follow the [Lightsail runbook](deploy/LIGHTSAIL_RUNBOOK.md#10a-shared-beta-signup-after-the-schema-4-release) for production commands and rollback.
 
 ## Invitation commands
 

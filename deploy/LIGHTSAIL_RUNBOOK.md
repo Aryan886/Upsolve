@@ -1,6 +1,6 @@
 # Upsolve: Lightsail deployment and update runbook
 
-Use this guide to update the existing server. It describes the deployment established on September 28, 2026, and includes invitation links in the application version you deploy next. A Git push does not update the running website: the server must build and activate that commit.
+Use this guide to update the existing server. It describes the deployment established on September 28, 2026, and the shared beta signup release deployed on October 3. A Git push does not update the running website: the server must build and activate that commit.
 
 **Normal update:** test locally → commit and push → prepare a clean server checkout → stop the app and back up → keep a copy off the server → build and check the new release → switch releases → test the website and extension.
 
@@ -17,6 +17,7 @@ Use this guide to update the existing server. It describes the deployment establ
 | Application service | `cp-notes.service`, running as the `cp-notes` system user |
 | Active release | `/opt/cp-notes/current`, a symlink to a directory under `/opt/cp-notes/releases/` |
 | First release | `/opt/cp-notes/releases/beta-1` |
+| Verified October 3 release | `/opt/cp-notes/releases/20261003-152854-5345f88bfe1f`, commit `5345f88bfe1f3e1edb1d8e51efcc5f6663f2ecd4`, schema 4 |
 | Database | `/var/lib/cp-notes/cp-notes.db` |
 | Database backups | `/var/lib/cp-notes/backups/` |
 | Runtime configuration | `/etc/cp-notes/app.env`, owned by `root:cp-notes`, mode `0640` |
@@ -27,7 +28,7 @@ Use this guide to update the existing server. It describes the deployment establ
 
 The initial deployment used an empty production database and the owner account `aryankhade80@gmail.com`. Existing notes on the Windows computer were not imported. The first release used database schema 2; the invitation release upgrades it to schema 3 automatically when the new backend opens it.
 
-The website, HTTPS certificate validation, `/health`, and the Google verification file were checked externally. The owner also reported the website working. S3 backup upload/restoration, automatic backup scheduling, extension store publication, and resolution of Google's phishing warning have **not been confirmed in this deployment record**. Check their actual status before inviting testers; a working website does not confirm them.
+The October 3 update verified HTTPS, `/health`, the Google verification file, the shared signup page, and the published extension's allowed origin. The production website includes the [Chrome Web Store install link](https://chromewebstore.google.com/detail/cp-notes/gdfdnapanhndofblljbgfppndhdlioko). Pre- and post-migration backups were independently restored and downloaded with matching SHA-256 checksums. S3 uploads and automatic backup scheduling remain unconfigured, and a real tester's complete onboarding remains pending. See [release evidence](RELEASE_CHECKLIST.md#shared-beta-lightsail-rollout-2026-10-03).
 
 The server reported about **419 MiB usable RAM**, with swap enabled. The build plan originally assumed 1 GB. This guide deliberately uses a maintenance window for builds on the current small server. Expect the website to show a gateway error from the stop step until activation. If builds run out of memory, use a separate compatible Amazon Linux build environment of the same architecture; do not upload Windows `node_modules` or weaken password hashing to make a build fit.
 
@@ -52,6 +53,7 @@ Commands marked **Windows PowerShell** run on your computer. Commands marked **L
 
 ```bash
 cat /etc/os-release
+export PATH="/opt/node/bin:$PATH"
 /opt/node/bin/node --version
 /opt/node/bin/npm --version
 readlink -f /opt/cp-notes/current
@@ -72,7 +74,7 @@ LOCAL_DEVELOPMENT=false
 PORT=3000
 DATABASE_PATH=/var/lib/cp-notes/cp-notes.db
 APP_ORIGIN=https://upsolve-aryan.duckdns.org
-EXTENSION_ORIGINS=chrome-extension://fckglphbjgnekemeihehbelacnlagfme
+EXTENSION_ORIGINS=chrome-extension://fckglphbjgnekemeihehbelacnlagfme,chrome-extension://gdfdnapanhndofblljbgfppndhdlioko
 SESSION_DAYS=30
 INVITATION_HOURS=72
 ```
@@ -141,7 +143,7 @@ Replace `PASTE_FULL_COMMIT_HASH` below. Keep one update in progress at a time. T
 (
   set -euo pipefail
   umask 077
-  RELEASE_COMMIT='0a3684e7187ca44fe1f46f3ec4112e5c35d5820fa'
+  RELEASE_COMMIT='PASTE_FULL_COMMIT_HASH'
   [[ "$RELEASE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
   test -f "$HOME/cp-notes-release.env"
   PREVIOUS_RELEASE=$(readlink -f /opt/cp-notes/current)
@@ -483,13 +485,13 @@ Follow [production restore](README.md#restore-exercise-and-production-restore): 
 
 ## 10. Invite testers after deploying the invitation release
 
-Run compiled operator commands from the active release. Supplying `--env-file` loads the same settings that systemd supplies to the website, including the HTTPS origin and invitation lifetime. No password is needed to create an invitation.
+Run compiled operator commands from the active release. Resolve `current` with `readlink -f` as shown below: this release's CLI entrypoint check can silently skip commands invoked through that symlink. Supplying `--env-file` loads the same settings that systemd supplies to the website, including the HTTPS origin and invitation lifetime. No password is needed to create an invitation.
 
 **Lightsail SSH / Bash; replace the example email:**
 
 ```bash
 sudo -u cp-notes /opt/node/bin/node --env-file=/etc/cp-notes/app.env \
-  /opt/cp-notes/current/backend/dist/admin.js invite tester@example.com
+  "$(readlink -f /opt/cp-notes/current)/backend/dist/admin.js" invite tester@example.com
 ```
 
 Privately send the printed setup link to that tester. They choose their password, then sign in to the website and extension. Links expire after 72 hours by default, are single-use, and issuing another for the same email replaces the old invitation. Creating an invitation does not send an email automatically. Treat the entire `#invite=...` link as a credential; do not put it in Git, screenshots, public feedback forms, or logs.
@@ -498,33 +500,33 @@ Other operator actions:
 
 ```bash
 sudo -u cp-notes /opt/node/bin/node --env-file=/etc/cp-notes/app.env \
-  /opt/cp-notes/current/backend/dist/admin.js revoke-invite tester@example.com
+  "$(readlink -f /opt/cp-notes/current)/backend/dist/admin.js" revoke-invite tester@example.com
 
 sudo -u cp-notes /opt/node/bin/node --env-file=/etc/cp-notes/app.env \
-  /opt/cp-notes/current/backend/dist/admin.js reset tester@example.com
+  "$(readlink -f /opt/cp-notes/current)/backend/dist/admin.js" reset tester@example.com
 
 sudo -u cp-notes /opt/node/bin/node --env-file=/etc/cp-notes/app.env \
-  /opt/cp-notes/current/backend/dist/admin.js disable tester@example.com
+  "$(readlink -f /opt/cp-notes/current)/backend/dist/admin.js" disable tester@example.com
 ```
 
 `reset` prompts for a hidden password; it and `disable` revoke sessions. An existing account uses reset rather than an invitation; resetting does not re-enable a disabled account. If the active CLI reports that `invite` is unknown, the server still runs an older release: deploy the invitation commit first. Running a new admin CLI against the old live database can itself trigger migration, so only use the active deployed version.
 
 ## 10A. Shared beta signup after the schema-4 release
 
-The current schema-3 server rejects schema 4. **Before the new server or any new compiled admin command opens the live database**, stop writes and the backup timer, take a SQLite-aware pre-migration backup, verify integrity and foreign keys, restore it independently with the matching schema-3 release, and retain an off-server copy. Use the existing backup and release steps above. Do not issue the shared link as the first upgrade step. A code-only rollback to schema 3 is incompatible; restoring the pre-migration backup can lose later notes and accounts.
+The previous schema-3 server rejects schema 4. The production upgrade completed on October 3. For a schema-3 installation still awaiting upgrade, **before the new server or any new compiled admin command opens the live database**, stop writes and the backup timer, take a SQLite-aware pre-migration backup, verify integrity and foreign keys, restore it independently with the matching schema-3 release, and retain an off-server copy. Use the existing backup and release steps above. Do not issue the shared link as the first upgrade step. A code-only rollback to schema 3 is incompatible; restoring the pre-migration backup can lose later notes and accounts.
 
 The operator command has no email argument. Run it only from the active schema-4 release, after checking HTTPS, login, notes, and the [published extension install link](https://chromewebstore.google.com/detail/cp-notes/gdfdnapanhndofblljbgfppndhdlioko) in the website onboarding:
 
 ```bash
 sudo -u cp-notes /opt/node/bin/node --env-file=/etc/cp-notes/app.env \
-  /opt/cp-notes/current/backend/dist/admin.js beta-link
+  "$(readlink -f /opt/cp-notes/current)/backend/dist/admin.js" beta-link
 sudo -u cp-notes /opt/node/bin/node --env-file=/etc/cp-notes/app.env \
-  /opt/cp-notes/current/backend/dist/admin.js beta-status
+  "$(readlink -f /opt/cp-notes/current)/backend/dist/admin.js" beta-status
 sudo -u cp-notes /opt/node/bin/node --env-file=/etc/cp-notes/app.env \
-  /opt/cp-notes/current/backend/dist/admin.js revoke-beta-link
+  "$(readlink -f /opt/cp-notes/current)/backend/dist/admin.js" revoke-beta-link
 ```
 
-`beta-link` prints the shared setup link once. Deliver it privately to the intended beta group. Anyone with a forwarded link can claim a remaining spot; the app does not verify email ownership. The link expires after seven days by default. `BETA_SIGNUP_HOURS` in `/etc/cp-notes/app.env` accepts 1–168 hours for newly issued links. A new link invalidates the previous one but keeps the signup count. The counter admits at most 30 accounts created through shared signup; manually created and individually invited accounts are separate. `beta-status` shows usage without disclosing the token. Revocation closes new registration and leaves existing accounts usable.
+`beta-link` prints the shared setup link once. Deliver it privately to the intended beta group. Anyone with a forwarded link can claim a remaining spot; the app does not verify email ownership. The link expires after seven days by default. `BETA_SIGNUP_HOURS` in `/etc/cp-notes/app.env` accepts 1–168 hours for newly issued links. A new link invalidates the previous one but keeps the signup count; an older link cannot be restored. The counter admits at most 30 accounts created through shared signup; manually created and individually invited accounts are separate. `beta-status` shows usage without disclosing the token. Revocation closes new registration and leaves existing accounts usable. Running `beta-link` again after revocation opens a fresh link for the remaining spots.
 
 For a live smoke test, use an intended beta tester's account and count it as one of the 30. Verify signup, ordinary website sign-in, store installation, extension sign-in, a saved note, and its website display. Then check `beta-status` before sending the link more widely. Do not reset the production counter after testing. If setup receives an uncertain response, the tester should try sign-in before submitting again.
 
@@ -583,7 +585,7 @@ if ($LASTEXITCODE -ne 0) { throw "Extension download failed." }
 - **Trusted unpacked testers:** extract into their existing extension folder and click **Reload** at `chrome://extensions`. First installation uses Developer mode → Load unpacked → the folder containing `manifest.json`. Keep the folder and public key stable; removing/reinstalling the extension can lose its locally stored drafts/session. Finish or preserve drafts before an update. Updates are manual.
 - **Chrome Web Store:** upload the new ZIP to the **existing** store item, update disclosures/screenshots as needed, submit for review, and publish after approval. Do not create a new store item for each update. See [Chrome's update instructions](https://developer.chrome.com/docs/webstore/update) and [our store checklist](STORE_LISTING.md). A website deployment alone does not update installed extensions.
 
-The verified store URL is recorded in the public build settings above as `VITE_EXTENSION_INSTALL_URL`. Rebuild and redeploy the website to show it in the existing onboarding UI; confirm the actual link after deployment. Store review and the website's Safe Browsing review are separate processes.
+The verified store URL is recorded in the public build settings above as `VITE_EXTENSION_INSTALL_URL` and was included in the October 3 website release. Store review and the website's Safe Browsing review are separate processes.
 
 ## 12. Quick troubleshooting
 

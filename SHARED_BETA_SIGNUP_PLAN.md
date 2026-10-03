@@ -1,7 +1,7 @@
 # CP Notes: shared beta signup implementation plan
 
 Prepared: 2026-10-03.
-Status: implemented locally; production migration and live browser verification are pending.
+Status: deployed on 2026-10-03; schema-4 migration, backup restoration, restart persistence, and the live signup page are verified. A real tester's complete signup, login, and extension capture remain pending.
 Requested scope: one reusable signup link with a maximum of **30 successful beta signups**.
 
 ## 1. Product behavior and scope
@@ -90,7 +90,7 @@ Production example after upgrade:
 
 ```bash
 sudo -u cp-notes /opt/node/bin/node --env-file=/etc/cp-notes/app.env \
-  /opt/cp-notes/current/backend/dist/admin.js beta-link
+  "$(readlink -f /opt/cp-notes/current)/backend/dist/admin.js" beta-link
 ```
 
 Use `beta-status` or `revoke-beta-link` in the same invocation for the other operations. Do not put the shared credential in source control, build-time variables, persistent logs, or public feedback. No automatic messaging is included.
@@ -182,4 +182,5 @@ Rollback to schema-3 code requires its matching backup and may lose writes made 
 - [x] Existing invitations, accounts, notes, and extension clients retain working behavior.
 - [x] Automated tests and `npm run check` pass; Linux release verification is recorded separately.
 - [x] Operator instructions and onboarding include the published extension install URL.
-- [ ] Production backup, migration, first-tester flow, and signup usage are verified before declaring the feature live.
+- [x] Production backups, schema-4 migration, restart persistence, and the live signup page with 0 / 30 used spots are verified. The operator issued the shared link for private delivery.
+- [ ] Complete the first real tester's signup, website/extension login, and capture flow, and verify that signup usage increments. Automated acceptance tests use disposable databases and do not consume production spots.

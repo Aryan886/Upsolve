@@ -1,6 +1,6 @@
 # CP Notes: AWS Beta Build Plan
 
-Status: website and extension published; shared beta signup implemented and verified locally, with production schema-4 rollout and live tester exercise pending.
+Status: website and extension published; shared beta signup deployed on 2026-10-03 with schema-4 migration, backup restoration, restart persistence, and the live signup page verified. A real tester's complete onboarding exercise remains pending.
 Implementation evidence: [release checklist](deploy/RELEASE_CHECKLIST.md).
 Prepared: 2026-09-27.
 Audience: up to 30 shared-link beta signups, alongside existing or individually invited accounts.
@@ -10,7 +10,7 @@ Approved scope addendum (2026-09-28): [invitation links implementation plan](INV
 
 This document is the implementation checklist. Creating it does not deploy the app, create AWS resources, migrate the existing database, or change application behavior.
 
-Implementation addendum (2026-10-03): [shared beta signup plan](SHARED_BETA_SIGNUP_PLAN.md) describes a reusable, expiring link capped at 30 new shared-link accounts, with the count preserved across link replacements. This extends the original recruitment scope; existing accounts and individual invitations remain supported. Local implementation is complete; production migration and live browser verification are pending.
+Implementation addendum (2026-10-03): [shared beta signup plan](SHARED_BETA_SIGNUP_PLAN.md) describes a reusable, expiring link capped at 30 new shared-link accounts, with the count preserved across link replacements. This extends the original recruitment scope; existing accounts and individual invitations remain supported. The feature is deployed; [release evidence](deploy/RELEASE_CHECKLIST.md#shared-beta-lightsail-rollout-2026-10-03) distinguishes verified production checks from the pending first-tester exercise.
 
 ## 1. Release objective
 
