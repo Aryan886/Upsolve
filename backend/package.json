@@ -4,10 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx watch --env-file-if-exists=../.env src/index.ts",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "start": "node dist/index.js",
+    "admin": "tsx --env-file-if-exists=../.env src/admin.ts",
+    "backup": "node dist/backup.js"
   },
   "dependencies": {
     "@cp-notes/shared": "*",

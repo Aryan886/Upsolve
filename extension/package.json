@@ -1,13 +1,14 @@
 {
   "name": "@cp-notes/extension",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite build --watch",
-    "build": "vite build",
+    "dev": "vite build --watch --mode development",
+    "build": "vite build --mode development",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --config vitest.config.ts"
+    "test": "vitest run --config vitest.config.ts",
+    "build:release": "vite build --mode production"
   },
   "dependencies": {
     "@cp-notes/shared": "*",

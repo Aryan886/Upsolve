@@ -50,8 +50,9 @@ export function EditDialog({ type, record, onClose, onSaved }: EditDialogProps) 
     }
     const controller = new AbortController();
     void getProblems(debouncedProblemQuery, controller.signal)
-      .then(setProblemResults)
+      .then((result) => { if (!controller.signal.aborted) setProblemResults(result); })
       .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
         if (error instanceof DOMException && error.name === "AbortError") return;
         setProblemError(error instanceof Error ? error.message : "Problem search failed");
       });
@@ -60,6 +61,7 @@ export function EditDialog({ type, record, onClose, onSaved }: EditDialogProps) 
 
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
+    if (saving) return;
     const form = new FormData(event.currentTarget);
     const problemId = selectedProblem?.id ?? null;
     let body: unknown;

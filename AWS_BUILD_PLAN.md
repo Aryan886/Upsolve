@@ -1,11 +1,16 @@
 # CP Notes: AWS Beta Build Plan
 
-Status: planned; implementation has not started.
+Status: website and extension published; shared beta signup deployed on 2026-10-03 with schema-4 migration, backup restoration, restart persistence, and the live signup page verified. A real tester's complete onboarding exercise remains pending.
+Implementation evidence: [release checklist](deploy/RELEASE_CHECKLIST.md).
 Prepared: 2026-09-27.
-Audience: approximately 10 invited testers.
+Audience: up to 30 shared-link beta signups, alongside existing or individually invited accounts.
 Purpose: publish a useful beta, collect feedback, and keep development and operating costs small.
 
+Approved scope addendum (2026-09-28): [invitation links implementation plan](INVITATION_LINKS_PLAN.md) adds operator-issued account setup links so testers can choose their own passwords. Local implementation and verification are recorded there and in the [release checklist](deploy/RELEASE_CHECKLIST.md); actual rollout remains pending. This extends manual account creation without enabling public registration or automated email delivery.
+
 This document is the implementation checklist. Creating it does not deploy the app, create AWS resources, migrate the existing database, or change application behavior.
+
+Implementation addendum (2026-10-03): [shared beta signup plan](SHARED_BETA_SIGNUP_PLAN.md) describes a reusable, expiring link capped at 30 new shared-link accounts, with the count preserved across link replacements. This extends the original recruitment scope; existing accounts and individual invitations remain supported. The feature is deployed; [release evidence](deploy/RELEASE_CHECKLIST.md#shared-beta-lightsail-rollout-2026-10-03) distinguishes verified production checks from the pending first-tester exercise.
 
 ## 1. Release objective
 
@@ -13,7 +18,9 @@ A tester can sign in, install the Chrome extension, capture a question from Leet
 
 Keep the existing React/Vite website, Express backend, npm workspaces, Zod validation, and better-sqlite3 database. Use one AWS server and one database file.
 
-## 2. Current implementation
+## 2. Baseline and current status
+
+The table below records the original baseline. The checked milestone items reflect implemented and locally verified changes; unchecked operating/distribution items still need the actual release environment.
 
 | Area | What exists | Required change |
 | --- | --- | --- |
@@ -25,7 +32,7 @@ Keep the existing React/Vite website, Express backend, npm workspaces, Zod valid
 | Verification | Vitest, Supertest, React Testing Library; root `npm run check` | Isolation, auth, migration, LeetCode, deployment and recovery coverage |
 | Deployment | Local setup instructions only | AWS configuration, repeatable releases, HTTPS, backups and restore instructions |
 
-There is no existing deployment directory or build-plan document. The inspected folder is not currently a Git checkout. Establish a private source repository before sharing releases, keeping database files and secrets excluded.
+The folder is now verified to be a Git checkout, and deployment files are under `deploy/`. Verify that the remote repository is private before sharing releases. Database files, secrets, build output and backup artifacts remain excluded.
 
 Paths in this document are relative to the repository unless they describe the target Linux server.
 
@@ -92,17 +99,17 @@ Website create-note forms and bulk import/export are also deferred. Reconsider w
 
 Primary files: `backend/src/database.ts`, `backend/src/app.test.ts`. Add focused migration tests if the existing API test file would become difficult to follow.
 
-- [ ] Extend the existing versioned migration mechanism; keep direct SQL and the current NotesDatabase class.
-- [ ] Add `users` with ID, normalized unique email, password hash, active flag, and creation timestamp.
-- [ ] Add `sessions` with user ID, unique token hash, client type (website or extension), creation timestamp, and expiry.
-- [ ] Add a required `user_id` foreign key to problems, patterns, mistakes, snippets, and editorial takeaways.
-- [ ] Replace global problem URL uniqueness with `UNIQUE(user_id, url)`.
-- [ ] Expand the database platform constraint to include `leetcode`.
-- [ ] Add user/date indexes for the feed and lists, a user/root-cause/date index for mistakes, and user/problem indexes where used. Index session expiry and user lookup.
-- [ ] Pass the authenticated user ID explicitly to database operations; never take ownership from a request body.
-- [ ] Scope reads, counts, search OR conditions, every feed UNION branch, statistics, updates, and deletes to that user.
-- [ ] Require a linked problem to belong to the same user. Return the usual not-found response for another user's record.
-- [ ] Preserve transactions around problem upsert plus note creation, and around ownership checks plus related writes.
+- [x] Extend the existing versioned migration mechanism; keep direct SQL and the current NotesDatabase class.
+- [x] Add `users` with ID, normalized unique email, password hash, active flag, and creation timestamp.
+- [x] Add `sessions` with user ID, unique token hash, client type (website or extension), creation timestamp, and expiry.
+- [x] Add a required `user_id` foreign key to problems, patterns, mistakes, snippets, and editorial takeaways.
+- [x] Replace global problem URL uniqueness with `UNIQUE(user_id, url)`.
+- [x] Expand the database platform constraint to include `leetcode`.
+- [x] Add user/date indexes for the feed and lists, a user/root-cause/date index for mistakes, and user/problem indexes where used. Index session expiry and user lookup.
+- [x] Pass the authenticated user ID explicitly to database operations; never take ownership from a request body.
+- [x] Scope reads, counts, search OR conditions, every feed UNION branch, statistics, updates, and deletes to that user.
+- [x] Require a linked problem to belong to the same user. Return the usual not-found response for another user's record.
+- [x] Preserve transactions around problem upsert plus note creation, and around ownership checks plus related writes.
 
 A one-time operator initialization command must create the owner account and assign the existing local records to that account. Supply its password through a hidden prompt, not command-line arguments or committed configuration. The bootstrap command must work on schema version 1 without depending on the completed migration already having run.
 
@@ -119,19 +126,19 @@ Acceptance: an existing database keeps its note counts, IDs, links, and contents
 Primary files: `backend/src/app.ts`, `backend/src/database.ts`, `shared/src/index.ts`.
 New focused files: `backend/src/auth.ts` for authentication functions/middleware and `backend/src/admin.ts` for local account commands, with corresponding tests.
 
-- [ ] Add login validation and a shared safe user response containing no password hash or session token hash.
+- [x] Add login validation and a shared safe user response containing no password hash or session token hash.
 - [ ] Use asynchronous Node `crypto.scrypt`, a random salt, stored hashing parameters, and timing-safe comparison. Configure the cost and memory allowance explicitly and benchmark them on the small server.
-- [ ] Use published password-hashing guidance rather than Node's default cost settings. Limit password input length and expensive concurrent login attempts.
-- [ ] Generate high-entropy opaque session tokens; store only a hash in SQLite. Start with a configurable 30-day lifetime and no refresh-token flow.
-- [ ] Website login sets a Secure, HttpOnly, SameSite=Lax cookie in production. Only an explicit local-development mode can relax Secure.
-- [ ] Extension login returns its own session token; the popup sends it in the Authorization header. Do not return browser cookie sessions in website response bodies.
-- [ ] Validate each session's expiry, client type, and active user. Persist sessions across restarts and remove expired rows periodically.
-- [ ] Add account/IP login throttling and generic invalid-credential responses. A small maintained limiter is acceptable if needed; no distributed service is required.
-- [ ] Validate trusted origins for browser login and cookie-authenticated mutations. Restrict CORS to configured website and extension origins; CORS is not authentication.
-- [ ] Trust only the local reverse proxy so forwarded client IP and HTTPS information are handled correctly.
-- [ ] Revoke the current session on logout; revoke all sessions on password change, operator reset, or account disable.
-- [ ] Add local commands to initialize the owner, create a tester, reset a password, and disable an account. No admin web dashboard.
-- [ ] Keep request logs free of passwords, tokens, cookies, note bodies, and captured code.
+- [x] Use published password-hashing guidance rather than Node's default cost settings. Limit password input length and expensive concurrent login attempts.
+- [x] Generate high-entropy opaque session tokens; store only a hash in SQLite. Start with a configurable 30-day lifetime and no refresh-token flow.
+- [x] Website login sets a Secure, HttpOnly, SameSite=Lax cookie in production. Only an explicit local-development mode can relax Secure.
+- [x] Extension login returns its own session token; the popup sends it in the Authorization header. Do not return browser cookie sessions in website response bodies.
+- [x] Validate each session's expiry, client type, and active user. Persist sessions across restarts and remove expired rows periodically.
+- [x] Add account/IP login throttling and generic invalid-credential responses. A small maintained limiter is acceptable if needed; no distributed service is required.
+- [x] Validate trusted origins for browser login and cookie-authenticated mutations. Restrict CORS to configured website and extension origins; CORS is not authentication.
+- [x] Trust only the local reverse proxy so forwarded client IP and HTTPS information are handled correctly.
+- [x] Revoke the current session on logout; revoke all sessions on password change, operator reset, or account disable.
+- [x] Add local commands to initialize the owner, create a tester, reset a password, and disable an account. No admin web dashboard.
+- [x] Keep request logs free of passwords, tokens, cookies, note bodies, and captured code.
 
 Proposed API contract:
 
@@ -147,22 +154,24 @@ Protect every data endpoint. Keep health, login, and public static pages appropr
 
 References: [Node crypto](https://nodejs.org/docs/latest-v22.x/api/crypto.html), [OWASP password storage](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html).
 
+Implementation note: the scrypt profile is N=32768, r=8, p=3 with a 64 MiB allowance and two concurrent jobs. The Linux verification benchmark was approximately 324 ms on the development machine; the small Lightsail-host benchmark remains pending.
+
 Acceptance: website and extension sessions work independently; expiry and revocation take effect; failed login attempts do not exhaust server memory; no data route works anonymously.
 
 ## 7. Milestone 3: LeetCode capture
 
 Primary files: `shared/src/index.ts`, `shared/src/index.test.ts`, `extension/src/scraper.ts`, `extension/src/scraper.test.ts`, and `extension/popup.html`.
 
-- [ ] Add `leetcode` to platform values, labels, validation, and the popup dropdown.
-- [ ] Recognize `leetcode.com/problems/<slug>/` and its description, solutions, editorial, and submissions subpaths.
-- [ ] Recognize `leetcode.com/contest/<contest>/problems/<slug>/` and retain the contest context when present.
-- [ ] Normalize these variants to `https://leetcode.com/problems/<slug>/`, removing queries and fragments.
-- [ ] Check exact supported hostnames and valid problem routes. Do not interpret profile pages, unrelated submission URLs, or lookalike domains as problems.
-- [ ] Extract the visible problem title, fall back to the document/tab title, and remove a trailing LeetCode site label.
-- [ ] Keep the name and URL editable when the page has not loaded or title extraction fails.
-- [ ] Leave numeric rating empty. Difficulty labels and automatic topic imports are deferred.
-- [ ] When reusing an owned canonical problem previously saved as Other, allow a reliable LeetCode classification without overwriting the user's other metadata.
-- [ ] Keep the existing activeTab permission model; capture starts when the user opens the popup.
+- [x] Add `leetcode` to platform values, labels, validation, and the popup dropdown.
+- [x] Recognize `leetcode.com/problems/<slug>/` and its description, solutions, editorial, and submissions subpaths.
+- [x] Recognize `leetcode.com/contest/<contest>/problems/<slug>/` and retain the contest context when present.
+- [x] Normalize these variants to `https://leetcode.com/problems/<slug>/`, removing queries and fragments.
+- [x] Check exact supported hostnames and valid problem routes. Do not interpret profile pages, unrelated submission URLs, or lookalike domains as problems.
+- [x] Extract the visible problem title, fall back to the document/tab title, and remove a trailing LeetCode site label.
+- [x] Keep the name and URL editable when the page has not loaded or title extraction fails.
+- [x] Leave numeric rating empty. Difficulty labels and automatic topic imports are deferred.
+- [x] When reusing an owned canonical problem previously saved as Other, allow a reliable LeetCode classification without overwriting the user's other metadata.
+- [x] Keep the existing activeTab permission model; capture starts when the user opens the popup.
 
 This milestone captures metadata from the page the tester is viewing. It does not depend on an unofficial LeetCode API, store LeetCode credentials, or fetch premium content.
 
@@ -173,20 +182,20 @@ Acceptance: supported LeetCode URL variants reuse one problem within a user's di
 Primary files: `website/src/App.tsx`, `website/src/api.ts`, `website/vite.config.ts`, `website/src/styles.css`, `extension/src/popup.ts`, `extension/popup.html`, `extension/src/styles.css`, `extension/public/manifest.json`, and `extension/vite.config.ts`.
 Add a small `website/src/components/LoginForm.tsx`; keep related account controls together unless their size warrants separation.
 
-- [ ] Add website session initialization, login/logout, account identity, and password change.
-- [ ] Clear cached user data on logout/account changes and abort or ignore stale in-flight responses.
-- [ ] Use `/api` in the website; proxy it to the backend in Vite development so browser cookies remain on one origin.
-- [ ] Add extension login/logout and initialize stored settings/session before authenticated requests can run.
-- [ ] Persist the extension token in `chrome.storage.local`, restrict its access to trusted extension contexts, and never store the password or sync the token.
-- [ ] Separate production and development extension configuration. Production has the fixed HTTPS API address; local overrides are a development feature.
-- [ ] Generate the production API permission from the same configured origin used by requests. Grant only that API host rather than all websites.
-- [ ] Bind tokens and drafts to the API environment and user so changing accounts or servers cannot reuse another account's state.
-- [ ] Add local draft recovery per account, problem, and note type. Restore after popup closure or same-user reauthentication.
-- [ ] Clear a draft after a confirmed save or explicit logout/discard. Serialize draft writes so a delayed write cannot recreate a cleared draft.
-- [ ] On network errors or session expiry, preserve unsent text and give a clear retry or login action. Do not automatically replay ambiguous failed saves.
-- [ ] Handle non-JSON gateway responses and timeouts without losing input or displaying raw exception text.
-- [ ] Add a short first-use checklist, an Open diary action, feedback links, and visible release versions.
-- [ ] Replace local-only copy and instructions to start a backend.
+- [x] Add website session initialization, login/logout, account identity, and password change.
+- [x] Clear cached user data on logout/account changes and abort or ignore stale in-flight responses.
+- [x] Use `/api` in the website; proxy it to the backend in Vite development so browser cookies remain on one origin.
+- [x] Add extension login/logout and initialize stored settings/session before authenticated requests can run.
+- [x] Persist the extension token in `chrome.storage.local`, restrict its access to trusted extension contexts, and never store the password or sync the token.
+- [x] Separate production and development extension configuration. Production has the fixed HTTPS API address; local overrides are a development feature.
+- [x] Generate the production API permission from the same configured origin used by requests. Grant only that API host rather than all websites.
+- [x] Bind tokens and drafts to the API environment and user so changing accounts or servers cannot reuse another account's state.
+- [x] Add local draft recovery per account, problem, and note type. Restore after popup closure or same-user reauthentication.
+- [x] Clear a draft after a confirmed save or explicit logout/discard. Serialize draft writes so a delayed write cannot recreate a cleared draft.
+- [x] On network errors or session expiry, preserve unsent text and give a clear retry or login action. Do not automatically replay ambiguous failed saves.
+- [x] Handle non-JSON gateway responses and timeouts without losing input or displaying raw exception text.
+- [x] Add a short first-use checklist, an Open diary action, feedback links, and visible release versions.
+- [x] Replace local-only copy and instructions to start a backend.
 
 Use one external feedback form with fields for what the user tried, what happened, expected behavior, and optional contact details. Include app/extension version and page context where useful; do not automatically attach private notes or code.
 
@@ -201,16 +210,16 @@ New files: `.env.example`, `deploy/Caddyfile`, `deploy/cp-notes.service`, and `d
 
 ### Application build
 
-- [ ] Add a production start script that runs compiled JavaScript.
-- [ ] Keep the workspace build order: shared, backend, website, extension.
-- [ ] Pin a supported Node 22 patch and matching npm version after validating the installed dependencies.
-- [ ] Serve only the built website directory. Never expose the repository, database, environment files, backups, or source maps containing sensitive configuration.
-- [ ] Mount JSON routes under `/api`; preserve JSON 404/error behavior before any website fallback.
-- [ ] Keep `/health` as a minimal readiness check, including a lightweight database query with no data disclosure.
-- [ ] Resolve static asset paths independently of the process working directory.
-- [ ] Validate required production settings and fail fast on missing assets, invalid origins, or an inaccessible database.
-- [ ] Confirm SIGTERM stops requests and closes SQLite cleanly.
-- [ ] Build/install native dependencies on Linux for the target architecture. Never copy Windows `node_modules` to the server.
+- [x] Add a production start script that runs compiled JavaScript.
+- [x] Keep the workspace build order: shared, backend, website, extension.
+- [x] Pin a supported Node 22 patch and matching npm version after validating the installed dependencies.
+- [x] Serve only the built website directory. Never expose the repository, database, environment files, backups, or source maps containing sensitive configuration.
+- [x] Mount JSON routes under `/api`; preserve JSON 404/error behavior before any website fallback.
+- [x] Keep `/health` as a minimal readiness check, including a lightweight database query with no data disclosure.
+- [x] Resolve static asset paths independently of the process working directory.
+- [x] Validate required production settings and fail fast on missing assets, invalid origins, or an inaccessible database.
+- [x] Confirm SIGTERM stops requests and closes SQLite cleanly.
+- [x] Build/install native dependencies on Linux for the target architecture. Never copy Windows `node_modules` to the server.
 
 Use one app process. If the 1 GB server struggles during a build, build the release on a matching Linux machine or CI runner rather than running builds alongside the live app.
 
@@ -239,8 +248,8 @@ Document how environment files are loaded; do not assume Node or npm loads them 
 - [ ] Initialize a fresh database or transfer a consistent legacy copy and explicitly migrate it for the owner.
 - [ ] Back up before a schema change, stop the app when required, switch the release, start it, and verify health and a real save/read flow.
 - [ ] Preserve the previous release and record which database schema it supports.
-- [ ] Document rollback: code-only rollback when schemas are compatible; otherwise stop writes and restore a matching database backup with its application version. Call out the loss of writes after that backup.
-- [ ] Update README with local auth setup, deployment, tester installation, account operations, and recovery.
+- [x] Document rollback: code-only rollback when schemas are compatible; otherwise stop writes and restore a matching database backup with its application version. Call out the loss of writes after that backup.
+- [x] Update README with local auth setup, deployment, tester installation, account operations, and recovery.
 
 The hosting plan does not need RDS, Cognito, a load balancer, a NAT gateway, or ECS. Add services only when a concrete requirement justifies their cost and maintenance.
 
@@ -253,17 +262,19 @@ Acceptance: the site works over HTTPS with port 3000 closed publicly; data survi
 New focused files: `backend/src/backup.ts`, `deploy/cp-notes-backup.service`, and `deploy/cp-notes-backup.timer`.
 Extend the deployment guide instead of creating a separate operations framework.
 
-- [ ] Use the SQLite-aware `better-sqlite3` backup API to create a consistent backup while the app is running.
-- [ ] Open the source database without creating or migrating it; fail if it is missing. Finalize the backup file only after the operation completes.
+- [x] Use the SQLite-aware `better-sqlite3` backup API to create a consistent backup while the app is running.
+- [x] Open the source database without creating or migrating it; fail if it is missing. Finalize the backup file only after the operation completes.
 - [ ] Schedule one daily backup with a systemd timer and prevent overlapping runs.
 - [ ] Upload completed backups to a private, encrypted S3 bucket in the selected region; block public access.
 - [ ] Use dedicated, narrowly scoped backup credentials for Lightsail, stored outside the repository and client builds. Use an instance role if the deployment switches to EC2.
 - [ ] Let a bucket lifecycle rule expire daily backups after 14 days; retain the latest three successful local copies.
 - [ ] Keep pre-migration backups under a separate prefix with deliberate retention for the beta.
-- [ ] Log backup/upload failures with context and a nonzero exit status. Mark success only after upload succeeds; make the last successful backup time easy for the operator to inspect.
+- [x] Log backup/upload failures with context and a nonzero exit status. Mark success only after upload succeeds; make the last successful backup time easy for the operator to inspect.
 - [ ] Check disk capacity, backup age, application errors, and credit balance during beta operations.
-- [ ] Perform a restore into a separate database, run integrity/foreign-key checks, and verify login, notes, search, and ownership.
-- [ ] Document a stopped-app restore procedure that safely handles adjacent WAL files and uses a compatible application version.
+- [x] Perform a restore into a separate database, run integrity/foreign-key checks, and verify login, notes, search, and ownership.
+- [x] Document a stopped-app restore procedure that safely handles adjacent WAL files and uses a compatible application version.
+
+Implementation note: backup/upload code, timer units, IAM/lifecycle templates and the stopped-app restore guide are prepared. Local live-backup restoration is tested. Actual S3 upload, bucket policies/lifecycle, timer activation and a downloaded-backup exercise are still pending.
 
 Daily backups allow up to approximately 24 hours of data loss if the server is lost between successful backups. Recovery is manual during this beta. Disk persistence and provider snapshots do not replace a tested database backup.
 
@@ -278,7 +289,7 @@ Acceptance: the operator can restore a downloaded backup independently of the li
 - [ ] Test an unpacked build with the owner and one other technical tester.
 - [ ] Prepare an unlisted Chrome Web Store listing, icons, screenshots, clear purpose, privacy information, and reviewer test access.
 - [ ] Explain that selected question metadata, notes, and account details go to the hosted service, and how users can request deletion.
-- [ ] Share the store install link and individual account setup instructions with the 10 testers after review.
+- [ ] Share the published store install link and the chosen setup link with up to 30 beta testers after live signup verification.
 - [ ] Run a one-to-two-week trial and collect feedback with a simple form and tester spreadsheet.
 - [ ] Track first successful capture, ability to find/edit a saved note, repeat use, installation/login friction, and reported data loss.
 - [ ] Prioritize blocked saves, lost drafts, privacy bugs, and confusing onboarding before adding new features.
@@ -338,4 +349,3 @@ Ship to all 10 users only when these checks pass. Record actual results and limi
 Keep each change small and reviewable. Follow the current naming, imports, and workspace layout. Use simple functions, explicit inputs, and contextual errors. Preserve the existing database access pattern; add new files only for a clear responsibility. Do not introduce an ORM, generic repository layer, state-management framework, or provider abstraction for hypothetical future requirements.
 
 Before provisioning, the remaining owner-specific values are: AWS plan/credit expiry, region, hostname/DNS access, owner email, feedback form URL, and Chrome developer account/extension ID. These are configuration and release dependencies, not reasons to delay the local implementation.
-

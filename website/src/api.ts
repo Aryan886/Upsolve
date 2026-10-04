@@ -11,43 +11,133 @@ import type {
   Problem,
   RootCause,
   Snippet,
+  User,
+  Invitation,
+  InvitationAccepted,
+  BetaSignup,
+  BetaAccepted,
 } from "@cp-notes/shared";
+import { BetaAcceptedSchema, BetaSignupSchema, InvitationSchema, InvitationAcceptedSchema } from "@cp-notes/shared";
 
-const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000").replace(/\/$/, "");
+const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "/api").replace(/\/$/, "");
 
 export class ApiError extends Error {
   readonly code: string;
   readonly details?: unknown;
+  readonly status?: number;
 
-  constructor(code: string, message: string, details?: unknown) {
+  constructor(code: string, message: string, details?: unknown, status?: number) {
     super(message);
     this.name = "ApiError";
     this.code = code;
     if (details !== undefined) this.details = details;
+    if (status !== undefined) this.status = status;
   }
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<ApiSuccess<T>> {
-  let response: Response;
+const pendingRequests = new Set<AbortController>();
+let accountGeneration = 0;
+
+export function clearSessionData(): void {
+  accountGeneration += 1;
+  for (const controller of pendingRequests) controller.abort();
+  pendingRequests.clear();
+}
+
+export async function request<T>(path: string, options: RequestInit = {}): Promise<ApiSuccess<T>> {
+  const generation = accountGeneration;
+  const controller = new AbortController();
+  pendingRequests.add(controller);
+  const timeout = window.setTimeout(() => controller.abort(new DOMException("Request timed out", "TimeoutError")), 15_000);
+  const signals = options.signal ? [controller.signal, options.signal] : [controller.signal];
+  const signal = AbortSignal.any(signals);
   try {
     const headers = new Headers(options.headers);
-    if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-    response = await fetch(`${API_BASE}${path}`, {
-      ...options,
-      headers,
-    });
-  } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") throw error;
-    throw new ApiError("backend_unavailable", "Could not reach the CP Notes backend. Is it running?", error);
+    if (options.body) headers.set("Content-Type", "application/json");
+    let response: Response;
+    try {
+      response = await fetch(`${API_BASE}${path}`, { ...options, credentials: "same-origin", headers, signal });
+    } catch {
+      if (signal.aborted && signal.reason?.name !== "TimeoutError") throw new DOMException("Request cancelled", "AbortError");
+      throw new ApiError("service_unavailable", "CP Notes could not be reached. Your changes are still here. Check the diary before retrying a save.");
+    }
+    if (generation !== accountGeneration || signal.aborted) throw new DOMException("Request cancelled", "AbortError");
+    if (response.status === 401 && path !== "/auth/login") {
+      clearSessionData();
+      window.dispatchEvent(new Event("cp-notes-session-expired"));
+      throw new ApiError("session_expired", "Your session ended. Sign in again.");
+    }
+    if (response.status === 204) return { data: undefined as T };
+    let payload: ApiSuccess<T> | ApiFailure;
+    try { payload = await response.json() as ApiSuccess<T> | ApiFailure; }
+    catch { throw new ApiError("invalid_response", "CP Notes is temporarily unavailable. Check the diary before retrying a save."); }
+    if (generation !== accountGeneration || signal.aborted) throw new DOMException("Request cancelled", "AbortError");
+    if (!payload || typeof payload !== "object") throw new ApiError("invalid_response", "CP Notes returned an unreadable response.");
+    if ("error" in payload && payload.error && typeof payload.error.message === "string") {
+      throw new ApiError(payload.error.code, payload.error.message, payload.error.details, response.status);
+    }
+    if (!response.ok || !("data" in payload)) throw new ApiError("service_unavailable", "CP Notes is temporarily unavailable. Try again shortly.");
+    return payload;
+  } finally {
+    window.clearTimeout(timeout);
+    pendingRequests.delete(controller);
   }
+}
 
-  if (response.status === 204) return { data: undefined as T };
-  const payload = (await response.json()) as ApiSuccess<T> | ApiFailure;
-  if (!response.ok || "error" in payload) {
-    const failure = payload as ApiFailure;
-    throw new ApiError(failure.error.code, failure.error.message, failure.error.details);
-  }
-  return payload;
+export async function getCurrentUser(): Promise<User> {
+  return (await request<User>("/auth/me")).data;
+}
+
+export async function login(email: string, password: string): Promise<User> {
+  return (await request<User>("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) })).data;
+}
+
+export async function logout(): Promise<void> {
+  await request("/auth/logout", { method: "POST" });
+}
+
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  await request("/auth/change-password", { method: "POST", body: JSON.stringify({ currentPassword, newPassword }) });
+}
+
+export async function inspectInvitation(token: string, signal?: AbortSignal): Promise<Invitation> {
+  const response = await request<unknown>("/auth/invitations/inspect", {
+    method: "POST",
+    body: JSON.stringify({ token }),
+    ...(signal ? { signal } : {}),
+  });
+  const result = InvitationSchema.safeParse(response.data);
+  if (!result.success) throw new ApiError("invalid_response", "CP Notes returned an unreadable invitation response. Try again shortly.");
+  return result.data;
+}
+
+export async function acceptInvitation(token: string, password: string, signal?: AbortSignal): Promise<InvitationAccepted> {
+  const response = await request<unknown>("/auth/invitations/accept", {
+    method: "POST",
+    body: JSON.stringify({ token, password }),
+    ...(signal ? { signal } : {}),
+  });
+  const result = InvitationAcceptedSchema.safeParse(response.data);
+  if (!result.success) throw new ApiError("invalid_response", "CP Notes returned an unreadable account setup response.");
+  return result.data;
+}
+
+export async function inspectBetaSignup(token: string, signal?: AbortSignal): Promise<BetaSignup> {
+  const response = await request<unknown>("/auth/beta/inspect", {
+    method: "POST", body: JSON.stringify({ token }), ...(signal ? { signal } : {}),
+  });
+  const result = BetaSignupSchema.safeParse(response.data);
+  if (!result.success) throw new ApiError("invalid_response", "CP Notes returned an unreadable beta link response. Try again shortly.");
+  return result.data;
+}
+
+export async function acceptBetaSignup(token: string, email: string, password: string, signal?: AbortSignal): Promise<BetaAccepted> {
+  const response = await request<unknown>("/auth/beta/accept", {
+    method: "POST", body: JSON.stringify({ token, email, password }), ...(signal ? { signal } : {}),
+  });
+  const result = BetaAcceptedSchema.safeParse(response.data);
+  if (!result.success) throw new ApiError("invalid_response", "CP Notes returned an unreadable account setup response.");
+  return result.data;
 }
 
 export interface Paged<T> {

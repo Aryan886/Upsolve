@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const PLATFORMS = ["codeforces", "codechef", "atcoder", "other"] as const;
+export const PLATFORMS = ["codeforces", "codechef", "atcoder", "leetcode", "other"] as const;
 export const ROOT_CAUSES = [
   "misread_constraint",
   "missed_edge_case",
@@ -223,8 +223,18 @@ export function detectProblemPage(rawUrl: string): DetectedProblemPage | null {
     return null;
   }
 
+  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) return null;
+
   const host = url.hostname.toLocaleLowerCase().replace(/^www\./, "");
   const parts = url.pathname.split("/").filter(Boolean);
+
+  if (host === "leetcode.com" && !url.port) {
+    const problem = /^\/problems\/([a-z0-9]+(?:-[a-z0-9]+)*)(?:\/(?:description|solutions|editorial|submissions)(?:\/[^/]+)*)?\/?$/.exec(url.pathname);
+    const contest = /^\/contest\/([a-z0-9]+(?:-[a-z0-9]+)*)\/problems\/([a-z0-9]+(?:-[a-z0-9]+)*)\/?$/.exec(url.pathname);
+    const slug = problem?.[1] ?? contest?.[2];
+    if (slug) return { platform: "leetcode", canonicalUrl: `https://leetcode.com/problems/${slug}/`, contestId: contest?.[1] ?? null };
+    return null;
+  }
 
   if (host === "codeforces.com") {
     let contestId: string | undefined;
@@ -302,3 +312,30 @@ export function rootCauseLabel(value: RootCause): string {
     .map((part) => part.charAt(0).toLocaleUpperCase() + part.slice(1))
     .join(" ");
 }
+
+export const EmailSchema = z.string().trim().toLowerCase().pipe(z.email().max(254));
+export const PasswordSchema = z.string().min(12, "Use at least 12 characters").max(128, "Use at most 128 characters");
+export const LoginSchema = z.object({ email: EmailSchema, password: z.string().min(1).max(128) });
+export const ChangePasswordSchema = z.object({ currentPassword: z.string().min(1).max(128), newPassword: PasswordSchema });
+export const UserSchema = z.object({ id: z.number().int().positive(), email: z.email(), createdAt: z.string() });
+export type User = z.infer<typeof UserSchema>;
+
+export const INVITATION_INVALID_MESSAGE = "This invitation is invalid or no longer available. Sign in if you already created your account, or ask the person who invited you for a new link.";
+export const InvitationTokenSchema = z.string().length(43, "This invitation link is malformed.")
+  .regex(/^[A-Za-z0-9_-]+$/, "This invitation link is malformed.");
+export const InvitationInspectSchema = z.strictObject({ token: InvitationTokenSchema });
+export const InvitationAcceptSchema = z.strictObject({ token: InvitationTokenSchema, password: PasswordSchema });
+export const InvitationSchema = z.object({ email: z.email(), expiresAt: z.iso.datetime() });
+export const InvitationAcceptedSchema = z.object({ email: z.email() });
+export type Invitation = z.infer<typeof InvitationSchema>;
+export type InvitationAccepted = z.infer<typeof InvitationAcceptedSchema>;
+
+export const BETA_UNAVAILABLE_MESSAGE = "This beta link is no longer available. Sign in if you already created an account, or ask for a current link.";
+export const BETA_FULL_MESSAGE = "This beta has reached its 30-signup limit. Existing users can still sign in.";
+export const BETA_ACCOUNT_UNAVAILABLE_MESSAGE = "Account setup is unavailable for this email. If you already have an account, sign in or contact the operator.";
+export const BetaInspectSchema = z.strictObject({ token: InvitationTokenSchema });
+export const BetaAcceptSchema = z.strictObject({ token: InvitationTokenSchema, email: EmailSchema, password: PasswordSchema });
+export const BetaSignupSchema = z.object({ expiresAt: z.iso.datetime(), remainingSignups: z.number().int().positive() });
+export const BetaAcceptedSchema = z.object({ email: z.email() });
+export type BetaSignup = z.infer<typeof BetaSignupSchema>;
+export type BetaAccepted = z.infer<typeof BetaAcceptedSchema>;
