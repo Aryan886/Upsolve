@@ -73,6 +73,7 @@ jobs:
           REQUESTED_OPERATION: ${{ inputs.operation }}
           REQUESTED_SHA: ${{ inputs.release_sha }}
         run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           if [[ "$REQUESTED_OPERATION" == migrate && ! "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
             echo "A migration requires an explicit full release SHA" >&2
             exit 1
