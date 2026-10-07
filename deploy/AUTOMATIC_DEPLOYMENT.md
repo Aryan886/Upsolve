@@ -1,6 +1,6 @@
 # GitHub deployment for the existing Lightsail server
 
-This is the operator setup for [the implementation plan](../AUTOMATIC_DEPLOYMENT_PLAN.md). The workflow is present in the repository, but `AUTO_DEPLOY_ENABLED` must stay `false` until the one-time backup, access, and supervised release checks below pass. A green build alone does not mean the live site changed.
+This is the operator setup for [the implementation plan](../AUTOMATIC_DEPLOYMENT_PLAN.md). The existing server's backup, access and supervised release/recovery checks passed on October 7; [the release checklist](RELEASE_CHECKLIST.md#automatic-deployment-rollout-2026-10-07) records the actual results. For a new installation, keep `AUTO_DEPLOY_ENABLED=false` until those checks pass. A green build alone does not mean the live site changed.
 
 The server remains Amazon Linux 2023 with Caddy, one `cp-notes.service`, and SQLite at `/var/lib/cp-notes/cp-notes.db`. The worker builds nothing on the server. It receives a Linux archive from GitHub, verifies it, tests a private database copy, stops the app for a final SQLite-aware backup and S3 round trip, then switches `/opt/cp-notes/current`. The current manual [Lightsail runbook](LIGHTSAIL_RUNBOOK.md) remains the recovery procedure.
 

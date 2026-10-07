@@ -1,6 +1,6 @@
 # AWS beta deployment and operations
 
-**Updating the existing server? Start with the [Lightsail deployment and update runbook](LIGHTSAIL_RUNBOOK.md).** It records the actual Amazon Linux 2023 deployment at `upsolve-aryan.duckdns.org` and provides commands for backups, per-commit releases, invitation schema migration, verification, rollback, and extension distribution. The Ubuntu setup below is the original bootstrap reference, not the operating system on the existing instance. The S3 and recovery sections remain applicable; do not rerun first-time database initialization during updates.
+**Routine website/backend updates use the [GitHub deployment pipeline](AUTOMATIC_DEPLOYMENT.md) from `main`.** Use the [Lightsail runbook](LIGHTSAIL_RUNBOOK.md) for the actual Amazon Linux 2023 server layout, maintenance, account operations, manual recovery and extension distribution. The Ubuntu setup below is the original bootstrap reference. First-time database initialization applies only to a new database.
 
 ## Release dependencies
 
@@ -104,6 +104,8 @@ Schema 4 was deployed on October 3. Run `admin.js beta-link`, `admin.js beta-sta
 
 ## Repeatable updates and rollback
 
+The existing server has a verified GitHub deploy/status/compatible-rollback workflow. The steps below describe manual maintenance and recovery; reconcile active GitHub/worker operations before changing the live release.
+
 1. Build a new immutable release and pass the gate before touching `current`.
 2. Run a backup and verify its upload marker. Before schema changes, take an additional pre-migration copy with deliberate retention.
 3. Stop the app if migrating or replacing the database. Never hold an async operation inside a SQLite transaction. Only the explicit initialization command can assign legacy ownership.
@@ -114,6 +116,8 @@ Schema 4 was deployed on October 3. Run `admin.js beta-link`, `admin.js beta-sta
 Never use an absent database as a reason to initialize an empty replacement. Production deliberately fails on missing/uninitialized database paths.
 
 ## Private S3 backups
+
+The existing server's private Mumbai bucket, scoped upload credentials, 14-day daily lifecycle and enabled backup timer were verified on October 7, including an independent downloaded-backup restore and a visible rejected-upload failure. See [release evidence](RELEASE_CHECKLIST.md#automatic-deployment-rollout-2026-10-07). The setup instructions below apply when configuring another environment.
 
 Create a private bucket in the chosen region with all four Block Public Access settings enabled, bucket-owner-enforced object ownership and default SSE-S3 encryption. Keep versioning disabled for this small beta unless its noncurrent-version retention is also configured. Apply `s3-lifecycle.json` to expire the `daily/` prefix after 14 days. The `pre-migration/` prefix has separate, deliberate retention.
 
