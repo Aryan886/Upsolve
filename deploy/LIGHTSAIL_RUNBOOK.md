@@ -1,8 +1,8 @@
 # Upsolve: Lightsail deployment and update runbook
 
-Use this guide for the existing server's layout, maintenance and manual recovery. Routine website/backend updates now use the [GitHub deployment pipeline](AUTOMATIC_DEPLOYMENT.md) from `main`. Its supervised rollout is recorded in [the release checklist](RELEASE_CHECKLIST.md#automatic-deployment-rollout-2026-10-07); push deployment is enabled only after the remaining gates pass.
+Use this guide for the existing server's layout, maintenance and manual recovery. Routine website/backend updates deploy automatically through [GitHub](AUTOMATIC_DEPLOYMENT.md) from `main`; the first ordinary main push was verified live on October 7. [The release checklist](RELEASE_CHECKLIST.md#automatic-deployment-rollout-2026-10-07) records deployment, backup restore, recovery and rollback evidence.
 
-**Routine update after enablement:** test locally → commit and push to `main` → GitHub checks/builds → server verifies the backup and activates → check the Actions result. The server-build commands below are a maintenance fallback.
+**Routine update:** test locally → commit and push to `main` → GitHub checks/builds → server verifies the backup and activates → check the Actions result. The server-build commands below are a maintenance fallback.
 
 ## 1. The setup we deployed
 

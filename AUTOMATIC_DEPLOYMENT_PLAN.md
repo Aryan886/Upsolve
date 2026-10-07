@@ -1,6 +1,6 @@
 # Automatic deployment from GitHub
 
-Status: the Amazon Linux build, one-time GitHub/AWS setup, independent S3 restore, supervised deployment, real startup-failure recovery, cancellation cleanup and repeated compatible rollback passed. The final PR and automatic push-to-live gates remain pending. Production follows `main`, as requested on October 7. Live evidence is recorded in [the release checklist](deploy/RELEASE_CHECKLIST.md#automatic-deployment-rollout-2026-10-07).
+Status: automatic deployment from `main` is enabled and verified live. The Amazon Linux build, PR gate, one-time GitHub/AWS setup, independent S3 restore, supervised deployment, real startup-failure recovery, cancellation cleanup, repeated compatible rollback and an ordinary push-to-live run passed. Production follows `main`, as requested on October 7. [The release checklist](deploy/RELEASE_CHECKLIST.md#automatic-deployment-rollout-2026-10-07) records exact commits, run URLs and backup verification; the first nightly cleanup invocation remains a future observation.
 
 Prepared October 3, 2026. This extends [AWS_BUILD_PLAN.md](AWS_BUILD_PLAN.md) and the [Lightsail runbook](deploy/LIGHTSAIL_RUNBOOK.md). Existing privacy, backup, and release requirements still apply.
 
@@ -16,7 +16,7 @@ Implementation order: local scripts and tests; GitHub CI; one-time access and ba
 
 ## 2. Repository baseline and prerequisites
 
-Verified from source and repository documentation, not a new inspection of the live instance:
+Planning baseline from source and repository documentation; October 7 live verification is recorded in the release checklist:
 
 | Item | Baseline |
 | --- | --- |
@@ -135,14 +135,14 @@ There is a maintenance window between stopping and verifying the app. Building a
 
 ## 7. Phase 3: GitHub workflow and access
 
-- [ ] Run checks for pull requests targeting `main`; grant no production secrets or AWS credentials to PR code. Avoid `pull_request_target` for executing contributions.
-- [ ] Run trusted build and deployment jobs on `push` to `main`. Use `needs` so deployment cannot run when verification fails. Keep automatic deployment disabled behind a variable until the supervised rollout passes.
-- [ ] Add `workflow_dispatch` for deploy, status and compatible code rollback. A migration run requires an explicit migration option and exact SHA. Rollback selects an already verified installed release; it does not mean running a workflow from an arbitrary old branch.
-- [ ] Keep the workflow available on the repository's default branch for manual dispatch, while enforcing `main` as the only deployment source. Confirm the default branch before enabling this UI path. Require selected candidate SHAs to belong to `main` and have the required successful checks.
-- [ ] Serialize deployment, recovery and temporary firewall changes using one production concurrency group with `cancel-in-progress: false`. Immediately before deployment, skip a superseded automatic push if it is no longer the current `main` head. Keep the server lock as protection against manual commands too. GitHub concurrency does not guarantee FIFO ordering.
-- [ ] Use a `production` environment restricted to `main` when supported. Routine releases need no approval after rollout. Manual migration selection remains explicit; use a reviewer gate where available without making everyday deploys require clicks.
-- [ ] Use minimal job permissions, normally `contents: read`; only the trusted access job receives `id-token: write`. Pin external actions to reviewed full commit SHAs. Pass inputs through validated environment values/arguments rather than injecting expressions into shell programs. [GitHub security guidance](https://docs.github.com/en/actions/reference/security/secure-use)
-- [ ] Report SHA, previous release, backup verification, timing, activation and recovery status in the Actions summary. Do not print environment files, private keys, private links, database contents or raw private application logs. Use GitHub's existing workflow notification settings; do not add email/Slack infrastructure.
+- [x] Run checks for pull requests targeting `main`; grant no production secrets or AWS credentials to PR code. Avoid `pull_request_target` for executing contributions.
+- [x] Run trusted build and deployment jobs on `push` to `main`. Use `needs` so deployment cannot run when verification fails. Keep automatic deployment disabled behind a variable until the supervised rollout passes.
+- [x] Add `workflow_dispatch` for deploy, status and compatible code rollback. A migration run requires an explicit migration option and exact SHA. Rollback selects an already verified installed release; it does not mean running a workflow from an arbitrary old branch.
+- [x] Keep the workflow available on the repository's default branch for manual dispatch, while enforcing `main` as the only deployment source. Confirm the default branch before enabling this UI path. Require selected candidate SHAs to belong to `main` and have the required successful checks.
+- [x] Serialize deployment, recovery and temporary firewall changes using one production concurrency group with `cancel-in-progress: false`. Immediately before deployment, skip a superseded automatic push if it is no longer the current `main` head. Keep the server lock as protection against manual commands too. GitHub concurrency does not guarantee FIFO ordering.
+- [x] Use a `production` environment restricted to `main` when supported. Routine releases need no approval after rollout. Manual migration selection remains explicit; use a reviewer gate where available without making everyday deploys require clicks.
+- [x] Use minimal job permissions, normally `contents: read`; only the trusted access job receives `id-token: write`. Pin external actions to reviewed full commit SHAs. Pass inputs through validated environment values/arguments rather than injecting expressions into shell programs. [GitHub security guidance](https://docs.github.com/en/actions/reference/security/secure-use)
+- [x] Report SHA, previous release, backup verification, timing, activation and recovery status in the Actions summary. Do not print environment files, private keys, private links, database contents or raw private application logs. Use GitHub's existing workflow notification settings; do not add email/Slack infrastructure.
 
 GitHub provides environments and deployment concurrency controls, but available protection features depend on repository visibility and plan; verify them during setup. [GitHub deployment controls](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/control-deployments)
 
@@ -208,8 +208,8 @@ For the initial real rollout, run manually through GitHub with automation disabl
 - [x] Trusted CI builds and verifies the exact production archive.
 - [x] One-time access, credentials and off-server backup gate pass.
 - [x] Supervised deployment, compatible recovery, disconnect cleanup and real service failure tests pass.
-- [ ] Automatic deployment is enabled for `main`.
-- [ ] A subsequent push updates the live site without Lightsail console commands.
+- [x] Automatic deployment is enabled for `main`.
+- [x] A subsequent push updates the live site without Lightsail console commands.
 
 ## 10. Everyday operation after enablement
 
