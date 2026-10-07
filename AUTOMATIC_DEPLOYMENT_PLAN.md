@@ -1,6 +1,6 @@
 # Automatic deployment from GitHub
 
-Status: isolated release tests pass; GitHub's production settings, AWS roles and the server worker are configured. The first private S3 backup uploaded successfully. Independent restore and supervised deployment/recovery gates remain pending, so automatic deployment is disabled. Production follows `main`, as requested on October 7.
+Status: the Amazon Linux build, one-time GitHub/AWS setup, independent S3 restore, supervised deployment, real startup-failure recovery and cancellation cleanup passed. Compatible rollback remains under verification, so automatic push deployment is disabled. Production follows `main`, as requested on October 7. Live evidence is recorded in [the release checklist](deploy/RELEASE_CHECKLIST.md#automatic-deployment-rollout-2026-10-07).
 
 Prepared October 3, 2026. This extends [AWS_BUILD_PLAN.md](AWS_BUILD_PLAN.md) and the [Lightsail runbook](deploy/LIGHTSAIL_RUNBOOK.md). Existing privacy, backup, and release requirements still apply.
 
@@ -205,8 +205,8 @@ Run `bash -n` on new shell scripts, validate workflow syntax with an appropriate
 For the initial real rollout, run manually through GitHub with automation disabled, then verify website login, a published-extension capture, read/edit, two-user isolation, restart persistence, off-server restore and a compatible rollback. Record release SHA, backup verification, actual downtime, GitHub run URL and observed outcomes in the release checklist. Use agreed tester accounts; do not put production login credentials into CI or write into an existing tester's notes automatically.
 
 - [x] Local workflow/worker files, release packaging, and isolated failure tests pass.
-- [ ] Trusted CI builds and verifies the exact production archive.
-- [ ] One-time access, credentials and off-server backup gate pass.
+- [x] Trusted CI builds and verifies the exact production archive.
+- [x] One-time access, credentials and off-server backup gate pass.
 - [ ] Supervised deployment, compatible recovery, disconnect cleanup and real service failure tests pass.
 - [ ] Automatic deployment is enabled for `main`.
 - [ ] A subsequent push updates the live site without Lightsail console commands.

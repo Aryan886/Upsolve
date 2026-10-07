@@ -187,7 +187,7 @@ jobs:
           import json
           with open("deployment-status.json", encoding="utf-8") as source:
               status = json.load(source)
-          for field in ("status", "stage", "releaseName", "previousRelease", "backup", "backupSha256", "recovery", "error"):
+          for field in ("status", "stage", "instance", "releaseName", "previousRelease", "backup", "backupSha256", "recovery", "error"):
               if field in status:
                   print(f"- {field}: {status[field]}")
           PY
@@ -244,3 +244,14 @@ jobs:
         env:
           LIGHTSAIL_INSTANCE: ${{ vars.LIGHTSAIL_INSTANCE }}
         run: python3 deploy/firewall_access.py close "$LIGHTSAIL_INSTANCE" deploy-firewall-state.json
+      - name: Record operation outcome
+        if: always() && hashFiles('deployment-status.json') != ''
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          with open("deployment-status.json", encoding="utf-8") as source:
+              status = json.load(source)
+          for field in ("status", "stage", "instance", "commit", "releaseName", "previousRelease", "backup", "backupSha256", "recovery", "error"):
+              if field in status:
+                  print(f"- {field}: {status[field]}")
+          PY

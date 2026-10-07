@@ -264,17 +264,17 @@ Extend the deployment guide instead of creating a separate operations framework.
 
 - [x] Use the SQLite-aware `better-sqlite3` backup API to create a consistent backup while the app is running.
 - [x] Open the source database without creating or migrating it; fail if it is missing. Finalize the backup file only after the operation completes.
-- [ ] Schedule one daily backup with a systemd timer and prevent overlapping runs.
-- [ ] Upload completed backups to a private, encrypted S3 bucket in the selected region; block public access.
-- [ ] Use dedicated, narrowly scoped backup credentials for Lightsail, stored outside the repository and client builds. Use an instance role if the deployment switches to EC2.
-- [ ] Let a bucket lifecycle rule expire daily backups after 14 days; retain the latest three successful local copies.
+- [x] Schedule one daily backup with a systemd timer and prevent overlapping runs.
+- [x] Upload completed backups to a private, encrypted S3 bucket in the selected region; block public access.
+- [x] Use dedicated, narrowly scoped backup credentials for Lightsail, stored outside the repository and client builds. Use an instance role if the deployment switches to EC2.
+- [x] Let a bucket lifecycle rule expire daily backups after 14 days; retain the latest three successful local copies.
 - [ ] Keep pre-migration backups under a separate prefix with deliberate retention for the beta.
 - [x] Log backup/upload failures with context and a nonzero exit status. Mark success only after upload succeeds; make the last successful backup time easy for the operator to inspect.
 - [ ] Check disk capacity, backup age, application errors, and credit balance during beta operations.
 - [x] Perform a restore into a separate database, run integrity/foreign-key checks, and verify login, notes, search, and ownership.
 - [x] Document a stopped-app restore procedure that safely handles adjacent WAL files and uses a compatible application version.
 
-Implementation note: backup/upload code, timer units, IAM/lifecycle templates and the stopped-app restore guide are prepared. Local live-backup restoration is tested. Actual S3 upload, bucket policies/lifecycle, timer activation and a downloaded-backup exercise are still pending.
+Implementation note (October 7): the private Mumbai S3 bucket, encryption/public-access policy, daily-only uploader, 14-day daily lifecycle and daily timer are configured. An actual uploaded/downloaded backup matched its SHA-256 and restored independently with website/extension login, save/search and two-user isolation. A real upload to an unauthorized prefix failed visibly without advancing the last-success marker. Automated deployments retain verified pre-release copies under a separate prefix without the daily expiry rule. See [release evidence](deploy/RELEASE_CHECKLIST.md#automatic-deployment-rollout-2026-10-07).
 
 Daily backups allow up to approximately 24 hours of data loss if the server is lost between successful backups. Recovery is manual during this beta. Disk persistence and provider snapshots do not replace a tested database backup.
 

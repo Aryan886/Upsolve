@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# != 1 || ! $1 =~ ^(deploy|migrate|rollback)-[a-f0-9]{40}-[0-9]{1,20}-[0-9]{1,4}$ ]]; then
+if [[ $# != 1 ]] || [[ ! $1 =~ ^(deploy|migrate)-[a-f0-9]{40}-[0-9]{1,20}-[0-9]{1,4}$ && ! $1 =~ ^rollback-[a-f0-9]{40}-[0-9]{1,20}-[0-9]{1,4}-[0-9]{1,20}-[0-9]{1,4}$ ]]; then
   echo "Expected deploy, migrate or rollback plus a validated release name" >&2
   exit 2
 fi

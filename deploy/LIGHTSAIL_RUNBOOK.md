@@ -1,8 +1,8 @@
 # Upsolve: Lightsail deployment and update runbook
 
-Use this guide to update the existing server. It describes the deployment established on September 28, 2026, and the shared beta signup release deployed on October 3. A Git push does not update the running website: the server must build and activate that commit.
+Use this guide for the existing server's layout, maintenance and manual recovery. Routine website/backend updates now use the [GitHub deployment pipeline](AUTOMATIC_DEPLOYMENT.md) from `main`. Its supervised rollout is recorded in [the release checklist](RELEASE_CHECKLIST.md#automatic-deployment-rollout-2026-10-07); push deployment is enabled only after the remaining gates pass.
 
-**Normal update:** test locally → commit and push → prepare a clean server checkout → stop the app and back up → keep a copy off the server → build and check the new release → switch releases → test the website and extension.
+**Routine update after enablement:** test locally → commit and push to `main` → GitHub checks/builds → server verifies the backup and activates → check the Actions result. The server-build commands below are a maintenance fallback.
 
 ## 1. The setup we deployed
 
@@ -11,7 +11,7 @@ Use this guide to update the existing server. It describes the deployment establ
 | Website | <https://upsolve-aryan.duckdns.org> |
 | AWS instance | Lightsail, named `upsolve-aryan` |
 | Operating system / SSH user | Amazon Linux 2023 / `ec2-user` |
-| Source repository / release branch | `https://github.com/Aryan886/Upsolve.git` / `beta` |
+| Source repository / release branch | `https://github.com/Aryan886/Upsolve.git` / `main` |
 | Node / npm | Node `22.23.3`, npm `10.9.9`, installed under `/opt/node` |
 | Public entry point | Caddy on TCP 80 and 443, proxying to `127.0.0.1:3000` |
 | Application service | `cp-notes.service`, running as the `cp-notes` system user |
@@ -28,9 +28,9 @@ Use this guide to update the existing server. It describes the deployment establ
 
 The initial deployment used an empty production database and the owner account `aryankhade80@gmail.com`. Existing notes on the Windows computer were not imported. The first release used database schema 2; the invitation release upgrades it to schema 3 automatically when the new backend opens it.
 
-The October 3 update verified HTTPS, `/health`, the Google verification file, the shared signup page, and the published extension's allowed origin. The production website includes the [Chrome Web Store install link](https://chromewebstore.google.com/detail/cp-notes/gdfdnapanhndofblljbgfppndhdlioko). Pre- and post-migration backups were independently restored and downloaded with matching SHA-256 checksums. S3 uploads and automatic backup scheduling remain unconfigured, and a real tester's complete onboarding remains pending. See [release evidence](RELEASE_CHECKLIST.md#shared-beta-lightsail-rollout-2026-10-03).
+The October 3 update verified HTTPS, `/health`, the Google verification file, the shared signup page, and the published extension's allowed origin. The production website includes the [Chrome Web Store install link](https://chromewebstore.google.com/detail/cp-notes/gdfdnapanhndofblljbgfppndhdlioko). Pre- and post-migration backups were independently restored and downloaded with matching SHA-256 checksums. On October 7, private S3 uploads, daily scheduling and an independent downloaded-backup restore were verified. The owner confirmed website login, published-extension capture and website find/edit after the first automated release. A separate tester's complete onboarding/trial remains pending.
 
-The server reported about **419 MiB usable RAM**, with swap enabled. The build plan originally assumed 1 GB. This guide deliberately uses a maintenance window for builds on the current small server. Expect the website to show a gateway error from the stop step until activation. If builds run out of memory, use a separate compatible Amazon Linux build environment of the same architecture; do not upload Windows `node_modules` or weaken password hashing to make a build fit.
+The server reported about **419 MiB usable RAM**, with swap enabled. The build plan originally assumed 1 GB. GitHub now builds in a compatible Amazon Linux container; only the final backup and activation require a short maintenance window. The manual server-build fallback below has a longer window. Do not upload Windows `node_modules` or weaken password hashing to make a build fit.
 
 ### How requests reach the application
 
@@ -126,12 +126,12 @@ git add -- PATH_TO_CHANGED_FILE
 git diff --cached --check
 git diff --cached
 git commit -m "Describe the completed update"
-git push origin beta
+git push origin main
 if ($LASTEXITCODE -ne 0) { throw "Push failed. Stop here." }
 git rev-parse HEAD
 ```
 
-Copy the full 40-character commit hash from the last command. Deploy this specific tested commit, not whatever happens to be newest later. These instructions use the existing `beta` branch; if you intentionally change the release branch, update both the push and clone commands.
+Copy the full 40-character commit hash from the last command. For manual maintenance, deploy this specific tested commit. These fallback commands follow the production `main` branch. Disable automatic deployment and reconcile any active GitHub/worker operation before performing a manual activation.
 
 ## 4. Prepare the new checkout on Lightsail
 
@@ -155,10 +155,10 @@ Replace `PASTE_FULL_COMMIT_HASH` below. Keep one update in progress at a time. T
   mkdir -p "$HOME/cp-notes-builds" "$HOME/cp-notes-deploy-history"
   test ! -e "$SOURCE_DIRECTORY"
   sudo test ! -e "$RELEASE_DIRECTORY"
-  git clone --no-checkout --single-branch --branch beta \
+  git clone --no-checkout --single-branch --branch main \
     https://github.com/Aryan886/Upsolve.git "$SOURCE_DIRECTORY"
   git -C "$SOURCE_DIRECTORY" checkout --detach "$RELEASE_COMMIT"
-  git -C "$SOURCE_DIRECTORY" merge-base --is-ancestor "$RELEASE_COMMIT" origin/beta
+  git -C "$SOURCE_DIRECTORY" merge-base --is-ancestor "$RELEASE_COMMIT" origin/main
   printf 'RELEASE_COMMIT=%q\nRELEASE_NAME=%q\nSOURCE_DIRECTORY=%q\nRELEASE_DIRECTORY=%q\nPREVIOUS_RELEASE=%q\n' \
     "$RELEASE_COMMIT" "$RELEASE_NAME" "$SOURCE_DIRECTORY" \
     "$RELEASE_DIRECTORY" "$PREVIOUS_RELEASE" > "$HOME/cp-notes-deploy.env"

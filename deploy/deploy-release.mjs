@@ -20,9 +20,9 @@ const checker = "/usr/local/libexec/cp-notes/check-release.mjs";
 const extractor = "/usr/local/libexec/cp-notes/extract-release.py";
 const node = "/opt/node/bin/node";
 const instance = process.argv[2] ?? "";
-const match = /^(deploy|migrate|rollback)-([a-f0-9]{40}-[0-9]{1,20}-[0-9]{1,4})$/.exec(instance);
-const operation = match?.[1];
-const releaseName = match?.[2] ?? "";
+const deployment = parseDeploymentInstance(instance);
+const operation = deployment?.operation;
+const releaseName = deployment?.releaseName ?? "";
 const candidatePath = join(releases, releaseName);
 const statusPath = join(states, `${instance}.json`);
 const appOrigin = process.env.APP_ORIGIN;
@@ -34,7 +34,13 @@ let timerWasActive = false;
 let timerStopped = false;
 let appStopped = false;
 let switched = false;
-let result = { operation, releaseName, status: "running", stage: "starting", startedAt: new Date().toISOString() };
+let result = { instance, operation, releaseName, status: "running", stage: "starting", startedAt: new Date().toISOString() };
+
+export function parseDeploymentInstance(value) {
+  const match = /^(deploy|migrate|rollback)-([a-f0-9]{40}-[0-9]{1,20}-[0-9]{1,4})(?:-([0-9]{1,20})-([0-9]{1,4}))?$/.exec(value);
+  if (!match || (match[1] === "rollback") !== Boolean(match[3])) return undefined;
+  return { operation: match[1], releaseName: match[2] };
+}
 
 async function command(file, args, options = {}) {
   const response = await runFile(file, args, { timeout: 120_000, maxBuffer: 1024 * 1024, ...options });
@@ -241,7 +247,7 @@ async function recover() {
 }
 
 async function main() {
-  if (!match) throw new Error("Invalid deployment operation or release name");
+  if (!deployment) throw new Error("Invalid deployment operation or release name");
   if (process.getuid?.() !== 0) throw new Error("Deployment worker must run as root through its installed systemd unit");
   if (!appOrigin || !/^https:\/\//.test(appOrigin) || !remoteBackup) throw new Error("APP_ORIGIN and PRE_RELEASE_S3_URI are required");
   if (!existsSync(databasePath)) throw new Error("Production database is missing");

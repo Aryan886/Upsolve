@@ -5,7 +5,22 @@ import { join } from "node:path";
 import { createServer } from "node:http";
 import { once } from "node:events";
 import test from "node:test";
-import { copyUpload, waitForHealth } from "./deploy-release.mjs";
+import { copyUpload, parseDeploymentInstance, waitForHealth } from "./deploy-release.mjs";
+
+test("rollback operation IDs select the same installed release across distinct runs", () => {
+  const release = `${"a".repeat(40)}-100-1`;
+  assert.deepEqual(parseDeploymentInstance(`deploy-${release}`), { operation: "deploy", releaseName: release });
+  for (const run of ["200-1", "201-2"]) {
+    assert.deepEqual(parseDeploymentInstance(`rollback-${release}-${run}`), { operation: "rollback", releaseName: release });
+  }
+});
+
+test("refuses ambiguous rollback IDs and unsafe deployment names", () => {
+  const release = `${"a".repeat(40)}-100-1`;
+  for (const instance of [`rollback-${release}`, `deploy-${release}-200-1`, `rollback-${release}-../-1`, `delete-${release}`]) {
+    assert.equal(parseDeploymentInstance(instance), undefined);
+  }
+});
 
 test("waits for a restarted application to finish becoming healthy", async () => {
   let attempts = 0;
