@@ -52,7 +52,7 @@ jobs:
     steps:
       - name: Install pinned build prerequisites
         run: |
-          dnf install -y curl tar xz gzip git gcc-c++ make python3 findutils
+          dnf install -y curl-minimal tar xz gzip git gcc-c++ make python3 findutils
           mkdir -p /tmp/cp-notes-node-setup
           cd /tmp/cp-notes-node-setup
           version=22.23.3
