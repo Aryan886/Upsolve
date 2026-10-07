@@ -187,7 +187,7 @@ jobs:
           import json
           with open("deployment-status.json", encoding="utf-8") as source:
               status = json.load(source)
-          for field in ("status", "stage", "instance", "releaseName", "previousRelease", "backup", "backupSha256", "recovery", "error"):
+          for field in ("status", "stage", "instance", "commit", "releaseName", "previousRelease", "backup", "backupSha256", "startedAt", "completedAt", "failedAt", "recovery", "error"):
               if field in status:
                   print(f"- {field}: {status[field]}")
           PY
@@ -251,7 +251,7 @@ jobs:
           import json
           with open("deployment-status.json", encoding="utf-8") as source:
               status = json.load(source)
-          for field in ("status", "stage", "instance", "commit", "releaseName", "previousRelease", "backup", "backupSha256", "recovery", "error"):
+          for field in ("status", "stage", "instance", "commit", "releaseName", "previousRelease", "backup", "backupSha256", "startedAt", "completedAt", "failedAt", "recovery", "error"):
               if field in status:
                   print(f"- {field}: {status[field]}")
           PY

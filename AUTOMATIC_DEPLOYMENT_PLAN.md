@@ -1,6 +1,6 @@
 # Automatic deployment from GitHub
 
-Status: the Amazon Linux build, one-time GitHub/AWS setup, independent S3 restore, supervised deployment, real startup-failure recovery and cancellation cleanup passed. Compatible rollback remains under verification, so automatic push deployment is disabled. Production follows `main`, as requested on October 7. Live evidence is recorded in [the release checklist](deploy/RELEASE_CHECKLIST.md#automatic-deployment-rollout-2026-10-07).
+Status: the Amazon Linux build, one-time GitHub/AWS setup, independent S3 restore, supervised deployment, real startup-failure recovery, cancellation cleanup and repeated compatible rollback passed. The final PR and automatic push-to-live gates remain pending. Production follows `main`, as requested on October 7. Live evidence is recorded in [the release checklist](deploy/RELEASE_CHECKLIST.md#automatic-deployment-rollout-2026-10-07).
 
 Prepared October 3, 2026. This extends [AWS_BUILD_PLAN.md](AWS_BUILD_PLAN.md) and the [Lightsail runbook](deploy/LIGHTSAIL_RUNBOOK.md). Existing privacy, backup, and release requirements still apply.
 
@@ -207,7 +207,7 @@ For the initial real rollout, run manually through GitHub with automation disabl
 - [x] Local workflow/worker files, release packaging, and isolated failure tests pass.
 - [x] Trusted CI builds and verifies the exact production archive.
 - [x] One-time access, credentials and off-server backup gate pass.
-- [ ] Supervised deployment, compatible recovery, disconnect cleanup and real service failure tests pass.
+- [x] Supervised deployment, compatible recovery, disconnect cleanup and real service failure tests pass.
 - [ ] Automatic deployment is enabled for `main`.
 - [ ] A subsequent push updates the live site without Lightsail console commands.
 
