@@ -1,0 +1,245 @@
+name: Verify and deploy CP Notes
+
+on:
+  pull_request:
+    branches: [beta]
+  push:
+    branches: [beta]
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Deployment action
+        required: true
+        type: choice
+        options: [deploy, migrate, rollback, status]
+      release_sha:
+        description: Full beta commit SHA for deploy or migration; blank uses the selected beta head
+        required: false
+        type: string
+      release_name:
+        description: Installed release name for rollback; full operation instance for status
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: node --test deploy/check-release.test.mjs deploy/deploy-release.test.mjs
+      - run: python3 deploy/test_deployment.py
+
+  build:
+    if: github.ref == 'refs/heads/beta' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && (inputs.operation == 'deploy' || inputs.operation == 'migrate')))
+    runs-on: ubuntu-24.04
+    container:
+      image: public.ecr.aws/amazonlinux/amazonlinux:2023@sha256:12052e9b5d3fd85769abbdd863dd038e1890c9ace31d5fdbe1afa78eda97d061
+    defaults:
+      run:
+        shell: bash
+    outputs:
+      release_name: ${{ steps.package.outputs.release_name }}
+    steps:
+      - name: Install pinned build prerequisites
+        run: |
+          dnf install -y curl tar xz gzip git gcc-c++ make python3 findutils
+          mkdir -p /tmp/cp-notes-node-setup
+          cd /tmp/cp-notes-node-setup
+          version=22.23.3
+          archive="node-v${version}-linux-x64.tar.xz"
+          curl --fail --location --retry 2 --output "$archive" "https://nodejs.org/dist/v${version}/${archive}"
+          curl --fail --location --retry 2 --output SHASUMS256.txt "https://nodejs.org/dist/v${version}/SHASUMS256.txt"
+          awk -v archive="$archive" '$2 == archive { print }' SHASUMS256.txt > checksum.txt
+          test -s checksum.txt
+          sha256sum --check checksum.txt
+          tar -xf "$archive" -C /opt
+          echo "/opt/node-v${version}-linux-x64/bin" >> "$GITHUB_PATH"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ inputs.release_sha || github.sha }}
+          fetch-depth: 0
+      - name: Require a commit from beta
+        env:
+          REQUESTED_OPERATION: ${{ inputs.operation }}
+          REQUESTED_SHA: ${{ inputs.release_sha }}
+        run: |
+          if [[ "$REQUESTED_OPERATION" == migrate && ! "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "A migration requires an explicit full release SHA" >&2
+            exit 1
+          fi
+          git fetch origin beta
+          git merge-base --is-ancestor HEAD origin/beta
+          test "$(git rev-parse HEAD)" = "$(git rev-parse HEAD^{commit})"
+      - name: Test and package a production release
+        id: package
+        env:
+          RELEASE_COMMIT: ${{ github.event_name == 'push' && github.sha || inputs.release_sha || github.sha }}
+          VITE_BACKEND_URL: ${{ vars.VITE_BACKEND_URL }}
+          VITE_FEEDBACK_URL: ${{ vars.VITE_FEEDBACK_URL }}
+          VITE_EXTENSION_ID: ${{ vars.VITE_EXTENSION_ID }}
+          VITE_EXTENSION_INSTALL_URL: ${{ vars.VITE_EXTENSION_INSTALL_URL }}
+          VITE_EXTENSION_KEY: ${{ vars.VITE_EXTENSION_KEY }}
+        run: |
+          bash deploy/build-release.sh
+          name="${RELEASE_COMMIT}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          test -f "release-artifacts/${name}.tar.gz"
+          echo "release_name=$name" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: cp-notes-release
+          path: |
+            release-artifacts/*.tar.gz
+            release-artifacts/*.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/beta' && ((github.event_name == 'push' && vars.AUTO_DEPLOY_ENABLED == 'true') || (github.event_name == 'workflow_dispatch' && (inputs.operation == 'deploy' || inputs.operation == 'migrate')))
+    runs-on: ubuntu-24.04
+    environment: production
+    concurrency:
+      group: cp-notes-production
+      cancel-in-progress: false
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Skip a superseded automatic push
+        id: current
+        env:
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" != push || "$(git ls-remote origin refs/heads/beta | cut -f1)" == "$RELEASE_COMMIT" ]]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            echo "This push was superseded by a newer beta commit." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        if: steps.current.outputs.deploy == 'true'
+        with:
+          name: cp-notes-release
+          path: release-artifacts
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a
+        if: steps.current.outputs.deploy == 'true'
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ vars.DEPLOY_ROLE_ARN }}
+          role-session-name: cp-notes-${{ github.run_id }}
+      - name: Open runner SSH access
+        if: steps.current.outputs.deploy == 'true'
+        env:
+          LIGHTSAIL_INSTANCE: ${{ vars.LIGHTSAIL_INSTANCE }}
+        run: python3 deploy/firewall_access.py open "$LIGHTSAIL_INSTANCE" deploy-firewall-state.json "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: steps.current.outputs.deploy == 'true' && always()
+        with:
+          name: firewall-${{ github.run_id }}-${{ github.run_attempt }}
+          path: deploy-firewall-state.json
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Configure pinned SSH host key
+        if: steps.current.outputs.deploy == 'true'
+        env:
+          DEPLOY_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
+        run: |
+          umask 077
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_PRIVATE_KEY" > "$HOME/.ssh/deploy_key"
+          printf '%s\n' "$DEPLOY_HOST_KEY" > "$HOME/.ssh/known_hosts"
+      - name: Transfer and activate the tested release
+        if: steps.current.outputs.deploy == 'true'
+        env:
+          DEPLOY_SSH_USER: ${{ vars.DEPLOY_SSH_USER }}
+          DEPLOY_SSH_HOST: ${{ vars.DEPLOY_SSH_HOST }}
+          RELEASE_NAME: ${{ needs.build.outputs.release_name }}
+          REQUESTED_OPERATION: ${{ inputs.operation }}
+          DEPLOY_SSH_KEY_FILE: /home/runner/.ssh/deploy_key
+          DEPLOY_KNOWN_HOSTS_FILE: /home/runner/.ssh/known_hosts
+        run: |
+          operation=deploy
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then operation="$REQUESTED_OPERATION"; fi
+          bash deploy/remote-operation.sh "$operation" "$RELEASE_NAME"
+      - name: Close runner SSH access
+        if: steps.current.outputs.deploy == 'true' && always() && hashFiles('deploy-firewall-state.json') != ''
+        env:
+          LIGHTSAIL_INSTANCE: ${{ vars.LIGHTSAIL_INSTANCE }}
+        run: python3 deploy/firewall_access.py close "$LIGHTSAIL_INSTANCE" deploy-firewall-state.json
+      - name: Record deployment outcome
+        if: always() && hashFiles('deployment-status.json') != ''
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          with open("deployment-status.json", encoding="utf-8") as source:
+              status = json.load(source)
+          for field in ("status", "stage", "releaseName", "previousRelease", "backup", "backupSha256", "recovery", "error"):
+              if field in status:
+                  print(f"- {field}: {status[field]}")
+          PY
+
+  operate:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/beta' && (inputs.operation == 'rollback' || inputs.operation == 'status')
+    runs-on: ubuntu-24.04
+    environment: production
+    concurrency:
+      group: cp-notes-production
+      cancel-in-progress: false
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ vars.DEPLOY_ROLE_ARN }}
+          role-session-name: cp-notes-${{ github.run_id }}
+      - name: Open runner SSH access
+        env:
+          LIGHTSAIL_INSTANCE: ${{ vars.LIGHTSAIL_INSTANCE }}
+        run: python3 deploy/firewall_access.py open "$LIGHTSAIL_INSTANCE" deploy-firewall-state.json "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: firewall-${{ github.run_id }}-${{ github.run_attempt }}
+          path: deploy-firewall-state.json
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Configure pinned SSH host key
+        env:
+          DEPLOY_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
+        run: |
+          umask 077
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_PRIVATE_KEY" > "$HOME/.ssh/deploy_key"
+          printf '%s\n' "$DEPLOY_HOST_KEY" > "$HOME/.ssh/known_hosts"
+      - name: Read status or roll back compatible code
+        env:
+          DEPLOY_SSH_USER: ${{ vars.DEPLOY_SSH_USER }}
+          DEPLOY_SSH_HOST: ${{ vars.DEPLOY_SSH_HOST }}
+          DEPLOY_SSH_KEY_FILE: /home/runner/.ssh/deploy_key
+          DEPLOY_KNOWN_HOSTS_FILE: /home/runner/.ssh/known_hosts
+          RELEASE_NAME: ${{ inputs.release_name }}
+          REQUESTED_OPERATION: ${{ inputs.operation }}
+        run: bash deploy/remote-operation.sh "$REQUESTED_OPERATION" "$RELEASE_NAME"
+      - name: Close runner SSH access
+        if: always() && hashFiles('deploy-firewall-state.json') != ''
+        env:
+          LIGHTSAIL_INSTANCE: ${{ vars.LIGHTSAIL_INSTANCE }}
+        run: python3 deploy/firewall_access.py close "$LIGHTSAIL_INSTANCE" deploy-firewall-state.json
