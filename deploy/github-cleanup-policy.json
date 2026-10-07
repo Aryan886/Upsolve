@@ -1,0 +1,15 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "lightsail:GetInstancePortStates",
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "lightsail:CloseInstancePublicPorts",
+      "Resource": "arn:aws:lightsail:REPLACE_REGION:REPLACE_ACCOUNT_ID:Instance/REPLACE_INSTANCE_ID"
+    }
+  ]
+}

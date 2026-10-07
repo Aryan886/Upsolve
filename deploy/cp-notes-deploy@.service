@@ -1,0 +1,24 @@
+[Unit]
+Description=CP Notes release deployment %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/opt/cp-notes
+EnvironmentFile=/etc/cp-notes/app.env
+EnvironmentFile=/etc/cp-notes/deploy.env
+ExecStart=/usr/bin/flock -n /run/lock/cp-notes-deploy.lock /opt/node/bin/node /usr/local/libexec/cp-notes/deploy-release.mjs %i
+TimeoutStartSec=30min
+UMask=0022
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/opt/cp-notes /var/lib/cp-notes /var/lib/cp-notes-deploy /run/lock
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cp-notes-deploy

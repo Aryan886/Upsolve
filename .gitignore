@@ -23,3 +23,5 @@ release-artifacts/
 
 *.env
 **/backups/
+__pycache__/
+*.pyc
