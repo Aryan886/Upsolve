@@ -130,20 +130,23 @@ class FirewallTests(unittest.TestCase):
                 firewall_access.close_access("upsolve-aryan", self.state)
         aws.assert_not_called()
 
-    def test_cleanup_accepts_only_the_beta_deployment_workflow(self):
+    def test_cleanup_accepts_only_the_main_deployment_workflow(self):
         artifact = {"name": "firewall-123-2"}
         run = {
             "id": 123,
-            "path": ".github/workflows/deploy.yml@beta",
-            "head_branch": "beta",
+            "path": ".github/workflows/deploy.yml",
+            "head_branch": "main",
             "event": "push",
             "repository": {"full_name": "Aryan886/Upsolve"},
         }
         state = {"runId": "123-2"}
         with patch.dict(os.environ, {"GITHUB_REPOSITORY": "Aryan886/Upsolve"}):
-            reconcile_firewall.validate_artifact(artifact, run, state)
-            with self.assertRaisesRegex(ValueError, "beta deployment workflow"):
-                reconcile_firewall.validate_artifact(artifact, {**run, "path": ".github/workflows/deploy.yml@main"}, state)
+            for path in (".github/workflows/deploy.yml", ".github/workflows/deploy.yml@main", ".github/workflows/deploy.yml@refs/heads/main"):
+                reconcile_firewall.validate_artifact(artifact, {**run, "path": path}, state)
+            with self.assertRaisesRegex(ValueError, "main deployment workflow"):
+                reconcile_firewall.validate_artifact(artifact, {**run, "head_branch": "beta"}, state)
+            with self.assertRaisesRegex(ValueError, "main deployment workflow"):
+                reconcile_firewall.validate_artifact(artifact, {**run, "path": ".github/workflows/deploy.yml@beta"}, state)
             with self.assertRaisesRegex(ValueError, "artifact attempt"):
                 reconcile_firewall.validate_artifact(artifact, run, {"runId": "123-1"})
 

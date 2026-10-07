@@ -2,8 +2,44 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createServer } from "node:http";
+import { once } from "node:events";
 import test from "node:test";
-import { copyUpload } from "./deploy-release.mjs";
+import { copyUpload, waitForHealth } from "./deploy-release.mjs";
+
+test("waits for a restarted application to finish becoming healthy", async () => {
+  let attempts = 0;
+  const server = createServer((request, response) => {
+    attempts++;
+    response.writeHead(attempts < 3 ? 503 : 200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ data: { status: attempts < 3 ? "starting" : "ok" } }));
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  try {
+    await waitForHealth(`http://127.0.0.1:${server.address().port}/health`, 4, 10);
+    assert.equal(attempts, 3);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("fails within the retry limit when a restarted application remains unhealthy", async () => {
+  let attempts = 0;
+  const server = createServer((request, response) => {
+    attempts++;
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ data: { status: "starting" } }));
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  try {
+    await assert.rejects(waitForHealth(`http://127.0.0.1:${server.address().port}/health`, 2, 10), /did not become healthy/);
+    assert.equal(attempts, 2);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
 
 test("copies a release upload to a private immutable input", async () => {
   const directory = mkdtempSync(join(tmpdir(), "cp-notes-upload-test-"));

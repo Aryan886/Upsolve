@@ -172,17 +172,21 @@ async function fetchText(path, options = {}) {
   return { response, body: await response.text() };
 }
 
-async function verifyRelease(manifest) {
-  for (let attempt = 0; attempt < 20; attempt++) {
+export async function waitForHealth(url, maximumAttempts = 20, retryDelay = 1000) {
+  for (let attempt = 0; attempt < maximumAttempts; attempt++) {
     try {
-      const response = await fetch("http://127.0.0.1:3000/health", { signal: AbortSignal.timeout(3000) });
-      if (response.ok && (await response.json()).data?.status === "ok") break;
+      const response = await fetch(url, { signal: AbortSignal.timeout(3000) });
+      if (response.ok && (await response.json()).data?.status === "ok") return;
     } catch (error) {
       if (!(error instanceof TypeError) && error?.name !== "TimeoutError") throw error;
     }
-    if (attempt === 19) throw new Error("Application did not become healthy on loopback");
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    if (attempt + 1 < maximumAttempts) await new Promise((resolve) => setTimeout(resolve, retryDelay));
   }
+  throw new Error("Application did not become healthy on loopback");
+}
+
+async function verifyRelease(manifest) {
+  await waitForHealth("http://127.0.0.1:3000/health");
   const publicHealth = await fetchText("/health");
   if (!publicHealth.response.ok || JSON.parse(publicHealth.body).data?.status !== "ok") throw new Error("Public HTTPS health failed");
   const identity = await fetchText("/release.json");
@@ -207,6 +211,7 @@ async function recover() {
   if (!switched) {
     if (!appStopped && await isActive("cp-notes")) return { recovery: "old release remained active" };
     await startApp();
+    await waitForHealth("http://127.0.0.1:3000/health");
     return { recovery: "old release restarted" };
   }
   try {
@@ -221,8 +226,7 @@ async function recover() {
     await switchTo(previousPath);
     switched = false;
     await startApp();
-    const response = await fetch("http://127.0.0.1:3000/health", { signal: AbortSignal.timeout(10_000) });
-    if (!response.ok || (await response.json()).data?.status !== "ok") throw new Error("Previous release did not recover");
+    await waitForHealth("http://127.0.0.1:3000/health");
     return { recovery: "previous compatible code restored" };
   } catch (recoveryError) {
     let stopError;

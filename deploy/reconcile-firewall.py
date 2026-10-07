@@ -56,9 +56,9 @@ def validate_artifact(artifact, run, state):
     expected_name = re.fullmatch(r"firewall-(\d+)-(\d+)", artifact["name"])
     if not expected_name or int(expected_name.group(1)) != run["id"]:
         raise ValueError("Firewall artifact name differs from workflow run")
-    expected_paths = (".github/workflows/deploy.yml@beta", ".github/workflows/deploy.yml@refs/heads/beta")
-    if run["path"] not in expected_paths or run["head_branch"] != "beta" or run["event"] not in ("push", "workflow_dispatch"):
-        raise ValueError("Firewall artifact did not come from the beta deployment workflow")
+    expected_paths = (".github/workflows/deploy.yml", ".github/workflows/deploy.yml@main", ".github/workflows/deploy.yml@refs/heads/main")
+    if run["path"] not in expected_paths or run["head_branch"] != "main" or run["event"] not in ("push", "workflow_dispatch"):
+        raise ValueError("Firewall artifact did not come from the main deployment workflow")
     if run["repository"]["full_name"] != os.environ["GITHUB_REPOSITORY"]:
         raise ValueError("Firewall artifact belongs to a different repository")
     if state["runId"] != f"{run['id']}-{expected_name.group(2)}":
