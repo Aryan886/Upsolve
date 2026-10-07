@@ -182,7 +182,8 @@ try {
   assert.equal((await api("/auth/beta/inspect", undefined, { token: betaToken }, origin)).status, 400);
   await stop();
   const manifest = JSON.parse(await readFile(new URL("../extension/dist/manifest.json", import.meta.url), "utf8"));
-  assert.deepEqual(manifest.host_permissions, ["https://notes.example.test/*"]);
+  const expectedExtensionOrigin = process.env.EXPECTED_EXTENSION_ORIGIN ?? origin;
+  assert.deepEqual(manifest.host_permissions, [`${expectedExtensionOrigin}/*`]);
   assert.ok(!manifest.permissions.includes("tabs"));
   console.log("Linux production smoke passed: compiled invitation and beta-link commands, account setup, website/extension login, startup/static assets, authenticated save/search, isolation, signup/session restart persistence, schema-4 restore/revocation, SIGTERM and extension host permission.");
   console.log(`Temporary verification data: ${directory}`);

@@ -2,9 +2,9 @@ name: Verify and deploy CP Notes
 
 on:
   pull_request:
-    branches: [beta]
+    branches: [main]
   push:
-    branches: [beta]
+    branches: [main]
   workflow_dispatch:
     inputs:
       operation:
@@ -13,7 +13,7 @@ on:
         type: choice
         options: [deploy, migrate, rollback, status]
       release_sha:
-        description: Full beta commit SHA for deploy or migration; blank uses the selected beta head
+        description: Full main commit SHA for deploy or migration; blank uses the selected main head
         required: false
         type: string
       release_name:
@@ -40,7 +40,7 @@ jobs:
       - run: python3 deploy/test_deployment.py
 
   build:
-    if: github.ref == 'refs/heads/beta' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && (inputs.operation == 'deploy' || inputs.operation == 'migrate')))
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && (inputs.operation == 'deploy' || inputs.operation == 'migrate')))
     runs-on: ubuntu-24.04
     container:
       image: public.ecr.aws/amazonlinux/amazonlinux:2023@sha256:12052e9b5d3fd85769abbdd863dd038e1890c9ace31d5fdbe1afa78eda97d061
@@ -68,7 +68,7 @@ jobs:
         with:
           ref: ${{ inputs.release_sha || github.sha }}
           fetch-depth: 0
-      - name: Require a commit from beta
+      - name: Require a commit from main
         env:
           REQUESTED_OPERATION: ${{ inputs.operation }}
           REQUESTED_SHA: ${{ inputs.release_sha }}
@@ -77,8 +77,8 @@ jobs:
             echo "A migration requires an explicit full release SHA" >&2
             exit 1
           fi
-          git fetch origin beta
-          git merge-base --is-ancestor HEAD origin/beta
+          git fetch origin main
+          git merge-base --is-ancestor HEAD origin/main
           test "$(git rev-parse HEAD)" = "$(git rev-parse HEAD^{commit})"
       - name: Test and package a production release
         id: package
@@ -105,7 +105,7 @@ jobs:
 
   deploy:
     needs: build
-    if: github.ref == 'refs/heads/beta' && ((github.event_name == 'push' && vars.AUTO_DEPLOY_ENABLED == 'true') || (github.event_name == 'workflow_dispatch' && (inputs.operation == 'deploy' || inputs.operation == 'migrate')))
+    if: github.ref == 'refs/heads/main' && ((github.event_name == 'push' && vars.AUTO_DEPLOY_ENABLED == 'true') || (github.event_name == 'workflow_dispatch' && (inputs.operation == 'deploy' || inputs.operation == 'migrate')))
     runs-on: ubuntu-24.04
     environment: production
     concurrency:
@@ -122,11 +122,11 @@ jobs:
         env:
           RELEASE_COMMIT: ${{ github.sha }}
         run: |
-          if [[ "$GITHUB_EVENT_NAME" != push || "$(git ls-remote origin refs/heads/beta | cut -f1)" == "$RELEASE_COMMIT" ]]; then
+          if [[ "$GITHUB_EVENT_NAME" != push || "$(git ls-remote origin refs/heads/main | cut -f1)" == "$RELEASE_COMMIT" ]]; then
             echo "deploy=true" >> "$GITHUB_OUTPUT"
           else
             echo "deploy=false" >> "$GITHUB_OUTPUT"
-            echo "This push was superseded by a newer beta commit." >> "$GITHUB_STEP_SUMMARY"
+            echo "This push was superseded by a newer main commit." >> "$GITHUB_STEP_SUMMARY"
           fi
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         if: steps.current.outputs.deploy == 'true'
@@ -192,7 +192,7 @@ jobs:
           PY
 
   operate:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/beta' && (inputs.operation == 'rollback' || inputs.operation == 'status')
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && (inputs.operation == 'rollback' || inputs.operation == 'status')
     runs-on: ubuntu-24.04
     environment: production
     concurrency:
