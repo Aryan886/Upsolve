@@ -1,15 +1,17 @@
 import { createHash, randomBytes, scrypt, timingSafeEqual } from "node:crypto";
 import { Router, type Request, type Response } from "express";
-import { BETA_ACCOUNT_UNAVAILABLE_MESSAGE, BETA_UNAVAILABLE_MESSAGE, BetaAcceptSchema, BetaInspectSchema, ChangePasswordSchema, InvitationAcceptSchema, InvitationInspectSchema, INVITATION_INVALID_MESSAGE, LoginSchema, PasswordSchema, type User } from "@cp-notes/shared";
+import { ChangePasswordSchema, InvitationAcceptSchema, InvitationInspectSchema, INVITATION_INVALID_MESSAGE, LoginSchema, PasswordSchema, SignupSchema, SIGNUP_UNAVAILABLE_MESSAGE, type User } from "@cp-notes/shared";
 import type { NotesDatabase } from "./database.js";
 import { AppError } from "./errors.js";
 
 // OWASP's 32 MiB scrypt profile; two concurrent jobs fit the small beta server.
 const cost = { N: 32_768, r: 8, p: 3, maxmem: 64 * 1024 * 1024 };
 let passwordJobs = 0;
+const signupLimits = { ip: 20, email: 5 };
+const signupThrottleMessage = "Too many signup attempts. Try again in 15 minutes.";
 
 async function derivePassword(password: string, salt: string): Promise<Buffer> {
-  if (passwordJobs >= 2) throw new AppError(429, "auth_busy", "Sign-in is busy. Try again shortly.");
+  if (passwordJobs >= 2) throw new AppError(429, "auth_busy", "Authentication is busy. Try again shortly.");
   passwordJobs += 1;
   try {
     return await new Promise<Buffer>((resolve, reject) => {
@@ -121,6 +123,16 @@ export function createAuth(database: NotesDatabase, options: AuthOptions) {
 
   router.post("/login", (request, response) => login(request, response, "website"));
   router.post("/extension-login", (request, response) => login(request, response, "extension"));
+  router.post("/signup", async (request, response) => {
+    requireWebsiteOrigin(request);
+    throttle(`signup-ip:${request.ip ?? "unknown"}`, signupLimits.ip, signupThrottleMessage);
+    const input = SignupSchema.safeParse(request.body);
+    if (!input.success) throw new AppError(400, "validation_error", "Enter a valid email and a password with 12–128 characters. Only email and password are accepted.");
+    throttle(`signup-email:${input.data.email}`, signupLimits.email, signupThrottleMessage);
+    if (database.getUserByEmail(input.data.email)) throw new AppError(409, "signup_unavailable", SIGNUP_UNAVAILABLE_MESSAGE);
+    const passwordHash = await hashPassword(input.data.password);
+    response.status(201).json({ data: database.createSignupUser(input.data.email, passwordHash) });
+  });
   function limitInvitationRequests(request: Request): void {
     requireWebsiteOrigin(request);
     throttle(`invitation-ip:${request.ip ?? "unknown"}`, 40, "Too many invitation requests. Try again in 15 minutes.");
@@ -144,31 +156,9 @@ export function createAuth(database: NotesDatabase, options: AuthOptions) {
     const passwordHash = await hashPassword(input.data.password);
     response.status(201).json({ data: database.acceptInvitation(tokenHash, passwordHash) });
   });
-  function limitBetaRequests(request: Request, isAcceptance: boolean): void {
+  router.post(["/beta/inspect", "/beta/accept"], (request) => {
     requireWebsiteOrigin(request);
-    const address = request.ip ?? "unknown";
-    throttle(`beta-ip:${address}`, 120, "Too many beta signup requests. Try again in 15 minutes.");
-    if (isAcceptance) throttle(`beta-accept-ip:${address}`, 40, "Too many beta signup attempts. Try again in 15 minutes.");
-  }
-
-  router.post("/beta/inspect", (request, response) => {
-    limitBetaRequests(request, false);
-    const input = BetaInspectSchema.safeParse(request.body);
-    if (!input.success) throw new AppError(400, "validation_error", "The request is invalid");
-    const signup = database.getBetaSignup(hashToken(input.data.token));
-    if (!signup) throw new AppError(400, "beta_unavailable", BETA_UNAVAILABLE_MESSAGE);
-    response.json({ data: signup });
-  });
-  router.post("/beta/accept", async (request, response) => {
-    limitBetaRequests(request, true);
-    const input = BetaAcceptSchema.safeParse(request.body);
-    if (!input.success) throw new AppError(400, "validation_error", "The request is invalid");
-    const tokenHash = hashToken(input.data.token);
-    throttle(`beta-account:${tokenHash}:${input.data.email}`, 5, "Too many beta signup attempts. Try again in 15 minutes.");
-    if (!database.getBetaSignup(tokenHash)) throw new AppError(400, "beta_unavailable", BETA_UNAVAILABLE_MESSAGE);
-    if (database.getUserByEmail(input.data.email)) throw new AppError(400, "beta_account_unavailable", BETA_ACCOUNT_UNAVAILABLE_MESSAGE);
-    const passwordHash = await hashPassword(input.data.password);
-    response.status(201).json({ data: database.acceptBetaSignup(tokenHash, input.data.email, passwordHash) });
+    throw new AppError(410, "beta_signup_retired", `Shared beta links have retired. Create an account at ${options.websiteOrigins[0]}/signup or sign in if you already have one.`);
   });
   router.get("/me", (request, response) => response.json({ data: session(request).user }));
   router.post("/logout", (request, response) => {

@@ -3,7 +3,7 @@ import { InvitationTokenSchema } from "@cp-notes/shared";
 import { ApiError, clearSessionData, getCurrentUser, logout } from "./api";
 import { LoginForm, PasswordForm } from "./components/LoginForm";
 import { InvitationForm } from "./components/InvitationForm";
-import { BetaSignupForm } from "./components/BetaSignupForm";
+import { SignupForm } from "./components/SignupForm";
 import { useEffect, useRef, useState } from "react";
 import { FeedPage } from "./pages/FeedPage";
 import { MistakesPage } from "./pages/MistakesPage";
@@ -14,20 +14,26 @@ type Page = "feed" | "mistakes" | "patterns" | "snippets" | "editorial";
 
 export type SignupEntry =
   | { kind: "invitation"; token: string }
-  | { kind: "beta"; token: string }
+  | { kind: "public"; notice?: string }
   | { kind: "invalid" };
 
 export function readSignupLink(): SignupEntry | null {
   const parameters = new URLSearchParams(window.location.hash.slice(1));
   const invitationTokens = parameters.getAll("invite");
   const betaTokens = parameters.getAll("beta");
-  if (invitationTokens.length === 0 && betaTokens.length === 0) return null;
+  if (invitationTokens.length === 0 && betaTokens.length === 0) {
+    return ["/signup", "/signup/"].includes(window.location.pathname) ? { kind: "public" } : null;
+  }
+  if (betaTokens.length > 0 || invitationTokens.length > 1) {
+    window.history.replaceState(window.history.state, "", `/signup${window.location.search}`);
+    return invitationTokens.length + betaTokens.length > 1
+      ? { kind: "public", notice: "This link contains multiple account setup options. Create an account below or sign in to your existing account." }
+      : { kind: "public" };
+  }
   window.history.replaceState(window.history.state, "", `${window.location.pathname}${window.location.search}`);
-  if (invitationTokens.length + betaTokens.length !== 1) return { kind: "invalid" };
-  const kind = invitationTokens.length === 1 ? "invitation" : "beta";
-  const result = InvitationTokenSchema.safeParse(kind === "invitation" ? invitationTokens[0] : betaTokens[0]);
+  const result = InvitationTokenSchema.safeParse(invitationTokens[0]);
   if (!result.success) return { kind: "invalid" };
-  return { kind, token: result.data };
+  return { kind: "invitation", token: result.data };
 }
 
 const pages: { id: Page; label: string }[] = [
@@ -63,18 +69,33 @@ function Diary() {
 
 
 export default function App({ initialSignup = null }: { initialSignup?: SignupEntry | null }) {
-  if (window.location.pathname === "/privacy" || window.location.pathname === "/privacy/") return <PrivacyPage />;
-  return <AccountApp initialSignup={initialSignup} />;
+  const [route, setRoute] = useState(() => ({
+    pathname: window.location.pathname,
+    signup: initialSignup ?? (["/signup", "/signup/"].includes(window.location.pathname) ? { kind: "public" } as const : null),
+  }));
+  useEffect(() => {
+    function navigateBack(): void {
+      const signup = readSignupLink();
+      setRoute({ pathname: window.location.pathname, signup });
+    }
+    window.addEventListener("popstate", navigateBack);
+    return () => window.removeEventListener("popstate", navigateBack);
+  }, []);
+  function dismissSignup(): void {
+    window.history.replaceState(window.history.state, "", "/");
+    setRoute({ pathname: "/", signup: null });
+  }
+  if (["/privacy", "/privacy/"].includes(route.pathname)) return <PrivacyPage />;
+  return <AccountApp signup={route.signup} onDismissSignup={dismissSignup} />;
 }
 
-function AccountApp({ initialSignup }: { initialSignup: SignupEntry | null }) {
+function AccountApp({ signup, onDismissSignup }: { signup: SignupEntry | null; onDismissSignup: () => void }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [reload, setReload] = useState(0);
-  const [signup, setSignup] = useState(initialSignup);
   const [loginEmail, setLoginEmail] = useState("");
   const [showChecklist, setShowChecklist] = useState(false);
   const sessionGeneration = useRef(0);
@@ -102,7 +123,7 @@ function AccountApp({ initialSignup }: { initialSignup: SignupEntry | null }) {
       sessionGeneration.current += 1;
       clearSessionData();
       setUser(null);
-      setSignup(null);
+      onDismissSignup();
       setLoginEmail("");
       setShowChecklist(false);
       setMessage("");
@@ -149,7 +170,7 @@ function AccountApp({ initialSignup }: { initialSignup: SignupEntry | null }) {
   function showSignIn(email = "", notice = ""): void {
     sessionGeneration.current += 1;
     clearSessionData();
-    setSignup(null);
+    onDismissSignup();
     setLoginEmail(email);
     setMessage(notice);
     setError("");
@@ -166,19 +187,21 @@ function AccountApp({ initialSignup }: { initialSignup: SignupEntry | null }) {
       {signup ? <section className="account-card">
         <h2>Set up another account</h2>
         <p>You are signed in as {user.email}. Sign out before setting up another account.</p>
-        <button className="button secondary" disabled={busy} onClick={() => showSignIn()}>Return to diary</button>
+        <button className="button secondary" disabled={busy} onClick={() => showSignIn()}>{signup.kind === "public" ? "Open diary" : "Return to diary"}</button>
       </section> : <>
       <details className="account-card" open={showChecklist}><summary>Start here</summary><ol>
-        <li>{install ? <a href={install} target="_blank" rel="noreferrer">Install the CP Notes extension</a> : "Install the extension from the link shared by the beta operator."}</li>
+        <li>{install ? <a href={install} target="_blank" rel="noreferrer">Install the CP Notes extension</a> : "Install CP Notes from the Chrome Web Store."}</li>
         <li>Sign in to the extension with the same email and password you use here.</li><li>Open a LeetCode, Codeforces, CodeChef, or AtCoder problem. Open the extension, write a note, and save.</li>
         <li>Find and edit your saved note in this diary.</li>
       </ol></details>
       <PasswordForm key={`password-${user.id}`} onChanged={() => { if (generation === sessionGeneration.current) accountChanged(null, "Password changed. Sign in again on each device."); }} />
       <Diary key={`diary-${user.id}`} />
       </>}
-    </> : !error && (signup?.kind === "beta" ? <BetaSignupForm entry={signup}
+    </> : !error && (signup?.kind === "public" ? <>
+      {signup.notice && <p role="status">{signup.notice}</p>}
+      <SignupForm key={`signup-${generation}`}
       onAccepted={(email) => { if (generation === sessionGeneration.current) showSignIn(email, "Account created. Sign in to continue."); }}
-      onSignIn={(email, notice) => { if (generation === sessionGeneration.current) showSignIn(email, notice); }} />
+      onSignIn={(email, notice) => { if (generation === sessionGeneration.current) showSignIn(email, notice); }} /></>
       : signup ? <InvitationForm entry={signup}
       onAccepted={(email) => { if (generation === sessionGeneration.current) showSignIn(email, "Account created. Sign in to continue."); }}
       onSignIn={(email, notice) => { if (generation === sessionGeneration.current) showSignIn(email, notice); }} />

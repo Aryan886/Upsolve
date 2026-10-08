@@ -9,7 +9,35 @@ import {
   InvitationAcceptSchema,
   InvitationSchema,
   InvitationAcceptedSchema,
+  SignupSchema,
+  SignupAcceptedSchema,
 } from "./index.js";
+
+describe("public signup validation", () => {
+  const email = "tester@example.com";
+  const password = "  a password with spaces  ";
+
+  it("normalizes only email and accepts password boundaries", () => {
+    expect(SignupSchema.parse({ email: "  TESTER@Example.com  ", password })).toEqual({ email, password });
+    for (const length of [12, 128]) expect(SignupSchema.parse({ email, password: "a".repeat(length) }).password).toHaveLength(length);
+    for (const length of [11, 129]) expect(SignupSchema.safeParse({ email, password: "a".repeat(length) }).success).toBe(false);
+  });
+
+  it("rejects missing, invalid, oversized and extra input", () => {
+    for (const body of [undefined, null, [], {}, { email }, { password },
+      { email: null, password }, { email: 1, password }, { email, password: null }, { email, password: 1 },
+      { email: "invalid", password }, { email: `${"a".repeat(245)}@example.com`, password }]) {
+      expect(SignupSchema.safeParse(body).success).toBe(false);
+    }
+    for (const field of ["token", "referral", "userId", "active", "passwordHash", "confirmation"]) {
+      expect(SignupSchema.safeParse({ email, password, [field]: "override" }).success).toBe(false);
+    }
+    expect(SignupAcceptedSchema.parse({ email })).toEqual({ email });
+    for (const body of [null, {}, { email: "invalid" }, { email, token: "secret" }, { email, id: 1 }]) {
+      expect(SignupAcceptedSchema.safeParse(body).success).toBe(false);
+    }
+  });
+});
 
 describe("problem URL normalization", () => {
   it("deduplicates Codeforces contest and problemset URLs", () => {

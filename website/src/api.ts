@@ -14,10 +14,9 @@ import type {
   User,
   Invitation,
   InvitationAccepted,
-  BetaSignup,
-  BetaAccepted,
+  SignupAccepted,
 } from "@cp-notes/shared";
-import { BetaAcceptedSchema, BetaSignupSchema, InvitationSchema, InvitationAcceptedSchema } from "@cp-notes/shared";
+import { SignupAcceptedSchema, InvitationSchema, InvitationAcceptedSchema } from "@cp-notes/shared";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "/api").replace(/\/$/, "");
 
@@ -122,20 +121,11 @@ export async function acceptInvitation(token: string, password: string, signal?:
   return result.data;
 }
 
-export async function inspectBetaSignup(token: string, signal?: AbortSignal): Promise<BetaSignup> {
-  const response = await request<unknown>("/auth/beta/inspect", {
-    method: "POST", body: JSON.stringify({ token }), ...(signal ? { signal } : {}),
+export async function createAccount(email: string, password: string, signal?: AbortSignal): Promise<SignupAccepted> {
+  const response = await request<unknown>("/auth/signup", {
+    method: "POST", body: JSON.stringify({ email, password }), ...(signal ? { signal } : {}),
   });
-  const result = BetaSignupSchema.safeParse(response.data);
-  if (!result.success) throw new ApiError("invalid_response", "CP Notes returned an unreadable beta link response. Try again shortly.");
-  return result.data;
-}
-
-export async function acceptBetaSignup(token: string, email: string, password: string, signal?: AbortSignal): Promise<BetaAccepted> {
-  const response = await request<unknown>("/auth/beta/accept", {
-    method: "POST", body: JSON.stringify({ token, email, password }), ...(signal ? { signal } : {}),
-  });
-  const result = BetaAcceptedSchema.safeParse(response.data);
+  const result = SignupAcceptedSchema.safeParse(response.data);
   if (!result.success) throw new ApiError("invalid_response", "CP Notes returned an unreadable account setup response.");
   return result.data;
 }

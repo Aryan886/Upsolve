@@ -20,10 +20,11 @@ it.each(["", "short", "a".repeat(44), `${"a".repeat(42)}!`, `%E2%9C%93`])("rejec
   expect(window.location.hash).toBe("");
 });
 
-it("rejects duplicate invitation parameters even when they contain the same token", () => {
+it("redirects duplicate invitation parameters to neutral public signup", () => {
   const token = "a".repeat(43);
   window.history.replaceState(null, "", `/#invite=${token}&invite=${token}`);
-  expect(readSignupLink()).toEqual({ kind: "invalid" });
+  expect(readSignupLink()).toMatchObject({ kind: "public", notice: expect.stringContaining("multiple") });
+  expect(window.location.pathname).toBe("/signup");
   expect(window.location.hash).toBe("");
 });
 
@@ -34,15 +35,27 @@ it("preserves ordinary visits and unrelated hashes", () => {
   expect(window.location.hash).toBe("#start-here");
 });
 
-it("captures a shared beta link and rejects duplicate or mixed signup credentials", () => {
-  const token = "b".repeat(43);
-  window.history.replaceState({ returnTo: "diary" }, "", `/setup?source=friend#beta=${token}`);
-  expect(readSignupLink()).toEqual({ kind: "beta", token });
-  expect(window.location.pathname + window.location.search + window.location.hash).toBe("/setup?source=friend");
+it.each(["", "short", "expired", "revoked", "full", "b".repeat(43)])("redirects every old beta value to public signup without retaining it", (value) => {
+  window.history.replaceState({ returnTo: "diary" }, "", `/setup?source=friend#beta=${value}`);
+  expect(readSignupLink()).toEqual({ kind: "public" });
+  expect(window.location.pathname + window.location.search + window.location.hash).toBe("/signup?source=friend");
   expect(window.history.state).toEqual({ returnTo: "diary" });
-  for (const fragment of [`#beta=${token}&beta=${token}`, `#invite=${token}&beta=${token}`, "#beta=short"]) {
+});
+
+it("never accepts mixed or duplicate fragment credentials", () => {
+  const token = "b".repeat(43);
+  for (const fragment of [`#beta=${token}&beta=${token}`, `#invite=${token}&beta=${token}`, `#invite=${token}&beta=`, "#beta=&beta=short"]) {
     window.history.replaceState(null, "", `/${fragment}`);
-    expect(readSignupLink()).toEqual({ kind: "invalid" });
+    const result = readSignupLink();
+    expect(result).toMatchObject({ kind: "public", notice: expect.stringContaining("multiple") });
+    expect(JSON.stringify(result)).not.toContain(token);
     expect(window.location.hash).toBe("");
+    expect(window.location.pathname).toBe("/signup");
   }
+});
+
+it.each(["/signup", "/signup/"])("recognizes direct/reloaded %s without a fragment", (path) => {
+  window.history.replaceState(null, "", path);
+  expect(readSignupLink()).toEqual({ kind: "public" });
+  expect(readSignupLink()).toEqual({ kind: "public" });
 });

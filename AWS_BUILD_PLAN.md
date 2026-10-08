@@ -12,6 +12,8 @@ This document is the implementation checklist. Creating it does not deploy the a
 
 Implementation addendum (2026-10-03): [shared beta signup plan](SHARED_BETA_SIGNUP_PLAN.md) describes a reusable, expiring link capped at 30 new shared-link accounts, with the count preserved across link replacements. This extends the original recruitment scope; existing accounts and individual invitations remain supported. The feature is deployed; [release evidence](deploy/RELEASE_CHECKLIST.md#shared-beta-lightsail-rollout-2026-10-03) distinguishes verified production checks from the pending first-tester exercise.
 
+Scope addendum (2026-10-08): [public website signup](EXTENSION_PUBLIC_SIGNUP_PLAN.md) removes referral requirements and the lifetime beta cap, with the extension linking to `/signup`. Local implementation and verification are recorded in the [release checklist](deploy/RELEASE_CHECKLIST.md#public-website-signup-preparation-2026-10-08); live rollout and extension publication remain pending. This supersedes the earlier enrollment restrictions after cutover; schema 4, accounts, sessions, notes and optional invitations remain supported. Earlier dated evidence is retained as history.
+
 ## 1. Release objective
 
 A tester can sign in, install the Chrome extension, capture a question from LeetCode or an existing supported site, save a note, and retrieve and edit that note on the website. Their notes stay private and survive app restarts and deployments. Feedback is accessible from both the website and extension.

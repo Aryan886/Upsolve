@@ -4,6 +4,8 @@ Prepared: 2026-10-03.
 Status: deployed on 2026-10-03; schema-4 migration, backup restoration, restart persistence, and the live signup page are verified. A real tester's complete signup, login, and extension capture remain pending.
 Requested scope: one reusable signup link with a maximum of **30 successful beta signups**.
 
+Scope supersession (2026-10-08): [public website signup](EXTENSION_PUBLIC_SIGNUP_PLAN.md) removes referral requirements and the lifetime beta cap, with the extension linking to `/signup`. Local implementation and verification are recorded in the [release checklist](deploy/RELEASE_CHECKLIST.md#public-website-signup-preparation-2026-10-08); live rollout and extension publication remain pending. This supersedes the earlier enrollment restrictions after cutover; schema 4, accounts, sessions, notes and optional invitations remain supported. Earlier dated evidence is retained as history.
+
 ## 1. Product behavior and scope
 
 An operator generates one link and shares it with the beta group. Each visitor enters their own email, password, and password confirmation. After account creation, they sign in normally, install the published extension from the website's existing “Start here” section, and sign in to the extension with the same credentials.

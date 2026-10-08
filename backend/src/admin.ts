@@ -8,7 +8,7 @@ import { EmailSchema } from "@cp-notes/shared";
 import { hashPassword, hashToken } from "./auth.js";
 import { createBackup } from "./backup.js";
 import { NotesDatabase } from "./database.js";
-import { defaultDatabasePath, readBetaSignupConfig, readInvitationConfig } from "./config.js";
+import { defaultDatabasePath, readInvitationConfig } from "./config.js";
 
 function readPassword(label: string): Promise<string> {
   if (!process.stdin.isTTY) throw new Error("Use an interactive terminal for the hidden password prompt");
@@ -96,29 +96,17 @@ export async function runAdmin(
     console.log(`scrypt N=32768 r=8 p=3: ${Math.round(performance.now() - start)} ms; memory limit 64 MiB/job; maximum two jobs`);
     return;
   }
-  const path = resolve(environment.DATABASE_PATH ?? defaultDatabasePath);
   if (command === "beta-link") {
-    const config = readBetaSignupConfig(environment);
-    const token = randomBytes(32).toString("base64url");
-    const expiresAt = new Date(Date.now() + config.betaSignupHours * 3_600_000).toISOString();
-    const database = new NotesDatabase(path, { existingOnly: true });
-    let status;
-    try { status = database.issueBetaSignup(hashToken(token), expiresAt); }
-    finally { database.close(); }
-    try {
-      await outputInvitation(`Shared beta signup link: ${config.appOrigin}/#beta=${token}\nExpires: ${expiresAt}\nSignups: ${status.signupCount} / ${status.maxSignups}\nShare privately. Reissuing replaces the previous link and preserves usage.`);
-    } catch (error) {
-      throw new Error("Shared beta link output failed. Issue a replacement link before sharing it.", { cause: error });
-    }
-    return;
+    throw new Error("Shared beta link issuance has retired. Share the website /signup URL instead. beta-status retains history; revoke-beta-link is available for cleanup.");
   }
+  const path = resolve(environment.DATABASE_PATH ?? defaultDatabasePath);
   if (command === "beta-status" || command === "revoke-beta-link") {
     const database = new NotesDatabase(path, { existingOnly: true });
     try {
       if (command === "revoke-beta-link") console.log(database.revokeBetaSignup() ? "Shared beta signup link revoked" : "No active shared beta signup link");
       else {
         const status = database.getBetaStatus();
-        console.log(`Shared beta signup: ${status.state}; ${status.signupCount} / ${status.maxSignups} signups; ${status.remainingSignups} remaining; expires: ${status.expiresAt ?? "not issued"}`);
+        console.log(`Historical shared beta signup (retired): ${status.state}; ${status.signupCount} / ${status.maxSignups} signups; expires: ${status.expiresAt ?? "not issued"}`);
       }
     } finally { database.close(); }
     return;

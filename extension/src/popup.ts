@@ -108,7 +108,12 @@ function showAccount(): void {
   element("account").hidden = session === null;
   element("capture").hidden = session === null;
   element("account-email").textContent = session?.user.email ?? "";
-  element<HTMLAnchorElement>("open-diary").href = development ? "http://localhost:5173" : new URL(api).origin;
+}
+
+function setWebsiteLinks(): void {
+  const websiteOrigin = development ? "http://localhost:5173" : new URL(api).origin;
+  element<HTMLAnchorElement>("open-diary").href = websiteOrigin;
+  element<HTMLAnchorElement>("create-account").href = `${websiteOrigin}/signup`;
 }
 
 function resetFields(): void {
@@ -253,6 +258,7 @@ async function saveBackendSetting(): Promise<void> {
     await saveDraft();
     await chrome.storage.local.set({ backendUrl: candidate });
     api = candidate;
+    setWebsiteLinks();
     session = null;
     resetFields();
     showAccount();
@@ -274,6 +280,7 @@ async function initialize(): Promise<void> {
   }
   element("settings").hidden = !development;
   setValue("backend-url", api);
+  setWebsiteLinks();
   const context = await getActiveProblemContext();
   if (context) {
     problemKey = context.canonicalUrl;

@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import {
   ROOT_CAUSES,
   INVITATION_INVALID_MESSAGE,
+  SIGNUP_UNAVAILABLE_MESSAGE,
   BETA_ACCOUNT_UNAVAILABLE_MESSAGE,
   BETA_FULL_MESSAGE,
   BETA_UNAVAILABLE_MESSAGE,
@@ -288,6 +289,21 @@ export class NotesDatabase {
     const createdAt = new Date().toISOString();
     const result = this.db.prepare("INSERT INTO users (email, password_hash, created_at) VALUES (?, ?, ?)").run(normalized, passwordHash, createdAt);
     return { id: Number(result.lastInsertRowid), email: normalized, createdAt };
+  }
+
+  createSignupUser(email: string, passwordHash: string): { email: string } {
+    try {
+      return this.db.transaction(() => {
+        const user = this.createUser(email, passwordHash);
+        return { email: user.email };
+      }).immediate();
+    } catch (error) {
+      if ((error instanceof AppError && error.code === "account_exists") ||
+          (error instanceof Database.SqliteError && error.code === "SQLITE_CONSTRAINT_UNIQUE" && error.message.includes("users.email"))) {
+        throw new AppError(409, "signup_unavailable", SIGNUP_UNAVAILABLE_MESSAGE);
+      }
+      throw error;
+    }
   }
 
   getUserByEmail(email: string): (User & { passwordHash: string; active: boolean }) | null {

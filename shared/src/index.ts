@@ -320,6 +320,11 @@ export const ChangePasswordSchema = z.object({ currentPassword: z.string().min(1
 export const UserSchema = z.object({ id: z.number().int().positive(), email: z.email(), createdAt: z.string() });
 export type User = z.infer<typeof UserSchema>;
 
+export const SIGNUP_UNAVAILABLE_MESSAGE = "Account setup is unavailable for this email. Try signing in or contact support.";
+export const SignupSchema = z.strictObject({ email: EmailSchema, password: PasswordSchema });
+export const SignupAcceptedSchema = z.strictObject({ email: z.email() });
+export type SignupAccepted = z.infer<typeof SignupAcceptedSchema>;
+
 export const INVITATION_INVALID_MESSAGE = "This invitation is invalid or no longer available. Sign in if you already created your account, or ask the person who invited you for a new link.";
 export const InvitationTokenSchema = z.string().length(43, "This invitation link is malformed.")
   .regex(/^[A-Za-z0-9_-]+$/, "This invitation link is malformed.");
@@ -333,9 +338,3 @@ export type InvitationAccepted = z.infer<typeof InvitationAcceptedSchema>;
 export const BETA_UNAVAILABLE_MESSAGE = "This beta link is no longer available. Sign in if you already created an account, or ask for a current link.";
 export const BETA_FULL_MESSAGE = "This beta has reached its 30-signup limit. Existing users can still sign in.";
 export const BETA_ACCOUNT_UNAVAILABLE_MESSAGE = "Account setup is unavailable for this email. If you already have an account, sign in or contact the operator.";
-export const BetaInspectSchema = z.strictObject({ token: InvitationTokenSchema });
-export const BetaAcceptSchema = z.strictObject({ token: InvitationTokenSchema, email: EmailSchema, password: PasswordSchema });
-export const BetaSignupSchema = z.object({ expiresAt: z.iso.datetime(), remainingSignups: z.number().int().positive() });
-export const BetaAcceptedSchema = z.object({ email: z.email() });
-export type BetaSignup = z.infer<typeof BetaSignupSchema>;
-export type BetaAccepted = z.infer<typeof BetaAcceptedSchema>;

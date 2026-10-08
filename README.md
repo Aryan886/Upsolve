@@ -1,14 +1,12 @@
 # CP Notes
 
-A private competitive programming diary for invited testers. The Chrome extension captures patterns, mistakes, snippets, and editorial takeaways from LeetCode, Codeforces, CodeChef, AtCoder, or manually entered problems. The website provides search, a timeline, mistake statistics, editing, and deletion.
+A private competitive programming diary with public website account creation. The Chrome extension captures patterns, mistakes, snippets, and editorial takeaways from LeetCode, Codeforces, CodeChef, AtCoder, or manually entered problems. The website provides search, a timeline, mistake statistics, editing, and deletion.
 
 The website is running on an Amazon Linux 2023 Lightsail instance at <https://upsolve-aryan.duckdns.org>, and the [extension is published in the Chrome Web Store](https://chromewebstore.google.com/detail/cp-notes/gdfdnapanhndofblljbgfppndhdlioko). Use the [Lightsail runbook](deploy/LIGHTSAIL_RUNBOOK.md) for server maintenance, recovery, invitations, and extension releases. Private encrypted S3 backups and the daily timer are configured; an actual downloaded backup restored independently on October 7. See [deployment and recovery](deploy/README.md), [release checklist](deploy/RELEASE_CHECKLIST.md), and [build plan](AWS_BUILD_PLAN.md).
 
 Website/backend deployment is automatic: commit and push to `main` (or merge a PR), then check [Actions](https://github.com/Aryan886/Upsolve/actions/workflows/deploy.yml). GitHub checks and builds the release, and the server verifies a private backup before activation. The [first automatic main release](https://github.com/Aryan886/Upsolve/actions/runs/37611944810) passed on October 7. Failed-start recovery, cancellation cleanup and repeated compatible rollback passed with stored data unchanged. The live [`/release.json`](https://upsolve-aryan.duckdns.org/release.json) reports the active commit. See the [deployment guide](deploy/AUTOMATIC_DEPLOYMENT.md) and [implementation plan](AUTOMATIC_DEPLOYMENT_PLAN.md) for setup and evidence. Schema migrations use the explicit GitHub action; server maintenance and Chrome Web Store publication remain separate operations.
 
-Invitation-only account setup follows the [invitation links implementation plan](INVITATION_LINKS_PLAN.md). Operators issue private, expiring links; testers choose their own passwords and then use ordinary sign-in. There is no public signup or email delivery service.
-
-The [shared beta signup flow](SHARED_BETA_SIGNUP_PLAN.md) is deployed: one reusable link admits up to 30 new accounts, with the used count preserved across link replacements. The October 3 rollout verified schema 4, backups, restart persistence, and the live signup page with 30 available spots. The first real tester's signup and extension capture remain to be exercised; see the [release evidence](deploy/RELEASE_CHECKLIST.md#shared-beta-lightsail-rollout-2026-10-03).
+Public website signup is implemented locally according to [EXTENSION_PUBLIC_SIGNUP_PLAN.md](EXTENSION_PUBLIC_SIGNUP_PLAN.md); deployment and extension publication remain pending. The new `/signup` page needs no invitation, referral token, installed extension or lifetime beta cap. Existing accounts, sessions, notes and optional [individual invitations](INVITATION_LINKS_PLAN.md) are preserved. The October 3 shared beta rollout remains documented in the [historical release evidence](deploy/RELEASE_CHECKLIST.md#shared-beta-lightsail-rollout-2026-10-03).
 
 The website includes a public `/privacy` page, linked from the footer and available without an account or authentication request. Its source is `website/src/pages/PrivacyPage.tsx`. Deploy both the backend route and website build, then verify `/privacy` in a signed-out browser before entering `https://upsolve-aryan.duckdns.org/privacy` in the Chrome Web Store. Local implementation does not make that URL live. Review the policy whenever contact details, providers, data handling, or backup retention change.
 
@@ -38,25 +36,26 @@ npm run admin -- disable tester@example.com
 npm run admin -- benchmark
 ```
 
-Reset, disable, and password changes revoke all sessions. Disable keeps notes and does not reactivate on reset. There is no public signup or automated email reset.
+Reset, disable, and password changes revoke all sessions. Disable keeps notes and does not reactivate on reset. Public signup is available in this implementation; automated email reset is deferred. Operator resets require reliable proof of ownership, not just knowledge of an email address.
 
-## Shared beta signup
+## Public website signup
 
-After initializing the database, issue, inspect, or revoke the shared beta link:
+Open `/signup` on the website (`http://localhost:5173/signup` in development). Enter your email and a 12–128 character password, confirm it, and create the account. After confirmed creation, sign in normally on the website or extension with the same credentials. The website login also links to signup. The updated extension opens this page through **Create account on the website**; it never collects signup credentials or signs in automatically.
+
+Email verification and automatic password recovery are deferred. Email is an unverified identifier. For help, use the contact details on the privacy page; knowing or claiming an email alone cannot authorize a reset or transfer of notes. Recovery cannot be guaranteed without reliable ownership evidence.
+
+An interrupted request may have created the account. Try signing in first; registration is never automatically replayed. A duplicate email, including a disabled account, does not reset its password or reactivate it. Signup inputs stay only on the open page and clear on success, dismissal or account change; reloading starts a blank form. Signed-in visitors must explicitly sign out before creating another account.
+
+Schema stays **4**. Public creation never reads or changes `beta_signup`, even if its historical count is 30. Temporary abuse limits allow 20 signup attempts per IP and 5 per normalized email per 15 minutes, with separate login budgets and the existing shared two-job password-hashing bound. These process-local limits reset on restart and do not prevent distributed abuse; monitor hash contention, disk growth and backup health before wider promotion.
+
+Old `/#beta=...` bookmarks strip their fragments and lead to public signup. Mixed/duplicate setup fragments show neutral public guidance; a single valid `#invite=` still supports optional invitation setup. Legacy beta endpoints return `410 beta_signup_retired` with the public signup URL, including for stale website bundles. `beta-link` no longer issues links. Historical status and operational cleanup remain available:
 
 ```powershell
-npm run admin -- beta-link
 npm run admin -- beta-status
 npm run admin -- revoke-beta-link
 ```
 
-`beta-link` prints the private link once. Share it directly with the beta group; no email is sent automatically. Each person enters their own email and a 12–128 character password, then signs in normally on the website and extension. The [published Chrome extension](https://chromewebstore.google.com/detail/cp-notes/gdfdnapanhndofblljbgfppndhdlioko) is linked in onboarding when `VITE_EXTENSION_INSTALL_URL` is set for the website build. Email ownership is not verified; someone with a forwarded link can use an available spot.
-
-The cap is **30 successful accounts created through the shared link**. Existing accounts and individual invitations do not consume these spots. Failed attempts, duplicate emails, and link inspections do not count; disabling an account does not return a spot. Reissuing invalidates the earlier link but retains usage. The default lifetime is seven days; optional `BETA_SIGNUP_HOURS` accepts 1–168 integer hours for newly issued links. `beta-status` never prints the link; if it is lost, issue a replacement. Revocation closes new signup without affecting existing accounts.
-
-The link's `#beta=` fragment is removed from the browser address bar and held only in page memory. Refreshing setup requires reopening the original link. An interrupted signup might have completed: try ordinary sign-in before submitting again. The extension uses the existing login API and does not need a new store release for this feature.
-
-The October 3 production migration to schema 4 used an independently restored SQLite-aware backup. If upgrading another schema-3 database, take and verify such a backup before opening it with schema-4 code. The schema-3 server cannot open schema 4. Follow the [Lightsail runbook](deploy/LIGHTSAIL_RUNBOOK.md#10a-shared-beta-signup-after-the-schema-4-release) for production commands and rollback.
+Revoke the stored beta token only at an authorized cutover after the normal verified backup; leave historical counts/users intact. New code ignores the token, but old binaries or restored backups can revive enrollment. See [deployment steps and rollback](deploy/LIGHTSAIL_RUNBOOK.md#10b-public-website-signup-cutover). This code change needs no migration or new settings. Deploy backend/website with the updated release smoke, then publish the extension separately under the existing store item.
 
 ## Invitation commands
 
@@ -73,16 +72,16 @@ Links use `APP_ORIGIN` as their website base and expire after 72 hours by defaul
 
 **Before upgrading an existing schema-2 database, take and independently verify a SQLite-aware pre-migration backup before either the new server or any new admin command opens it.** Both automatically migrate to schema 3, including with `existingOnly`. The schema-2 binary rejects schema 3: rollback requires its matching backup and can lose later writes. Never issue an invitation as the first production upgrade step.
 
-## For invited testers
+## For testers
 
-1. Open your private invitation, choose a 12–128 character password, and confirm it.
-2. Sign in to the website with the invited email and your new password.
+1. Open website `/signup` or **Create account on the website** in the extension. Choose your email and a 12–128 character password and confirm it. An optional individual invitation can also set up its named email.
+2. After confirmed creation, sign in to the website with your email and new password.
 3. Follow “Start here” to install the extension and sign in there with the same email and password.
 4. Open a supported problem, capture a note, then find and edit it in your diary.
 
 Opening a link does not consume it. The website removes the invitation from the address bar and keeps it only for the current page; after a refresh, reopen the original link. If already signed in, sign out explicitly before setting up the invited account, or return to your current diary.
 
-If account setup is interrupted or reports an unavailable link after retrying, try ordinary sign-in with the password you just chose. The account may already have been created. Acceptance is never retried automatically. If sign-in fails, ask the person who invited you for a replacement link or a manual password reset. Keep links and passwords out of feedback and screenshots.
+If account setup is interrupted or reports an unavailable link after retrying, try ordinary sign-in with the password you just chose. The account may already have been created. Acceptance is never retried automatically. If sign-in fails, use the privacy page support contact. Optional invitation users can ask their inviter for a replacement link; manual resets require ownership evidence. Keep links and passwords out of feedback and screenshots.
 
 ## Development extension
 
@@ -122,19 +121,20 @@ For a separate Linux build, native dependency installation, production start/res
 bash deploy/verify-linux.sh /path/to/CP_notes_mvp
 ```
 
-This uses a temporary copy and test accounts, downloads the pinned official Node binary with a checksum check, installs locked dependencies, builds both release clients with test-only hostnames, prunes development dependencies, and runs `deploy/verify-release.mjs`. It exercises compiled invitation and shared beta CLI commands, acceptance, ordinary login, restart persistence, and independent schema-4 backup restoration. Temporary files are retained for inspection; the script never touches the real notes database. See the checklist for browser/HTTPS/S3 checks that require a deployed environment.
+This uses a temporary copy and test accounts, downloads the pinned official Node binary with a checksum check, installs locked dependencies, builds both release clients with test-only hostnames, prunes development dependencies, and runs `deploy/verify-release.mjs`. It exercises compiled invitation commands, retired beta APIs/issuance, token-free public creation independent of full beta history, ordinary login, restart persistence, and independent schema-4 backup restoration. Temporary files are retained for inspection; the script never touches the real notes database. See the checklist for browser/HTTPS/S3 checks that require a deployed environment.
 
 ## API and data
 
-Every data route is under `/api` and requires a valid cookie or extension bearer session. Login, invitation setup, and shared beta setup are available before authentication, with the required origin protection:
+Every data route is under `/api` and requires a valid cookie or extension bearer session. Login, public signup, and optional invitation setup are available before authentication, with the required origin protection:
 
 - `/auth/login`, `/auth/extension-login`, `/auth/me`, `/auth/logout`, `/auth/change-password`
 - `POST /auth/invitations/inspect` (`{ token }`) and `POST /auth/invitations/accept` (`{ token, password }`): website-origin-only setup; acceptance returns an email, never a session
-- `POST /auth/beta/inspect` (`{ token }`) and `POST /auth/beta/accept` (`{ token, email, password }`): website-origin-only shared beta setup, capped at 30 successful accounts
+- `POST /auth/signup` (`{ email, password }`): website-origin-only public registration; `201 { data: { email } }`, no session; strict input, `409 signup_unavailable` for existing emails
+- `POST /auth/beta/inspect` and `POST /auth/beta/accept`: website-origin-only retired endpoints, `410 beta_signup_retired`, no token lookup or writes
 - `/problems`: create/reuse and search private problem metadata
 - `/patterns`, `/mistakes`, `/snippets`, `/editorial`: create, list, edit and delete notes
 - `/mistakes/stats` and `/feed`: private aggregates and timeline
 
-JSON retains `{ "data": ..., "meta": ... }` and `{ "error": { "code": ..., "message": ... } }` envelopes. Ownership comes exclusively from the session. `/health` checks database readiness without returning user data. Schema 3 adds hashed, single-use invitations to existing accounts and per-user canonical problem URLs; schema 4 adds the shared beta signup counter and hashed current link. Historical URLs are not bulk rewritten. Invalid invitations and beta links use 400 responses, so they do not expire an existing session.
+JSON retains `{ "data": ..., "meta": ... }` and `{ "error": { "code": ..., "message": ... } }` envelopes. Ownership comes exclusively from the session. `/health` checks database readiness without returning user data. Schema 3 adds hashed, single-use invitations to existing accounts and per-user canonical problem URLs; schema 4 adds the shared beta signup counter and hashed current link. Historical URLs are not bulk rewritten. Invalid invitations use 400; signup conflicts use 409 and retired beta endpoints use 410, so none expire an existing session.
 
-Deleting a note is permanent; its problem is retained. Do not copy a live WAL database file for backup. Use the SQLite backup command and stopped-app restore procedure in the deployment guide. Restoring an older backup can revive outstanding invitations; revoke or reissue affected links before reopening access. User export, website capture forms, public signup, offline synchronization, sharing, and automatic imports remain deferred.
+Deleting a note is permanent; its problem is retained. Do not copy a live WAL database file for backup. Use the SQLite backup command and stopped-app restore procedure in the deployment guide. Restoring an older backup can revive outstanding invitations; revoke or reissue affected links before reopening access. User export, website capture forms, offline synchronization, sharing, and automatic imports remain deferred.

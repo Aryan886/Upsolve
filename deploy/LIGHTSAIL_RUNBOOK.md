@@ -513,6 +513,8 @@ sudo -u cp-notes /opt/node/bin/node --env-file=/etc/cp-notes/app.env \
 
 ## 10A. Shared beta signup after the schema-4 release
 
+Historical October 3 operator procedure. It applies to the older release; after public signup cutover, issuance and beta APIs are retired. Use section 10B below for the new release.
+
 The previous schema-3 server rejects schema 4. The production upgrade completed on October 3. For a schema-3 installation still awaiting upgrade, **before the new server or any new compiled admin command opens the live database**, stop writes and the backup timer, take a SQLite-aware pre-migration backup, verify integrity and foreign keys, restore it independently with the matching schema-3 release, and retain an off-server copy. Use the existing backup and release steps above. Do not issue the shared link as the first upgrade step. A code-only rollback to schema 3 is incompatible; restoring the pre-migration backup can lose later notes and accounts.
 
 The operator command has no email argument. Run it only from the active schema-4 release, after checking HTTPS, login, notes, and the [published extension install link](https://chromewebstore.google.com/detail/cp-notes/gdfdnapanhndofblljbgfppndhdlioko) in the website onboarding:
@@ -531,6 +533,26 @@ sudo -u cp-notes /opt/node/bin/node --env-file=/etc/cp-notes/app.env \
 For a live smoke test, use an intended beta tester's account and count it as one of the 30. Verify signup, ordinary website sign-in, store installation, extension sign-in, a saved note, and its website display. Then check `beta-status` before sending the link more widely. Do not reset the production counter after testing. If setup receives an uncertain response, the tester should try sign-in before submitting again.
 
 Restoring an older backup may lower the counter and revive a previous link. Keep registration closed after restoration, revoke the restored link, and reconcile prior admitted accounts before issuing a replacement. If the used count cannot be established, do not reopen registration.
+
+## 10B. Public website signup cutover
+
+Status: prepared locally, live rollout and store update pending. See [the implementation plan](../EXTENSION_PUBLIC_SIGNUP_PLAN.md) and [verification evidence](RELEASE_CHECKLIST.md#public-website-signup-preparation-2026-10-08). Main auto-deploys: prepare/review on a branch and push/merge only with release authorization. Existing schema 4, identities, disabled accounts, sessions, ownership, notes and invitations remain intact; no migration or new environment variables are needed.
+
+1. Run the normal release checks and retain the verified private pre-release backup. Deploy backend/website and updated `verify-release.mjs` together through the existing pipeline. Check `/release.json` for the intended commit. Schema-4 code compatibility does not prove behavioral rollback safety; exercise the actual previous release against a temporary backup copy before switching.
+2. At the separately authorized cutover, revoke the stored legacy beta token using the active release CLI below. Preserve users and the historical count. New code ignores the token, but old code or restored backups can revive enrollment.
+3. In a fresh browser profile, visit and refresh `https://upsolve-aryan.duckdns.org/signup` and `/signup/`. Create a dedicated authorized smoke account without a referral or extension; sign in normally and verify old-account login/notes, private data isolation and optional invitations. Old beta bookmarks, including expired/empty/mixed fragments, must remove credentials and reach public signup. Check both beta endpoints return `410 beta_signup_retired` with `/signup` guidance. Live signup writes real data and requires release authorization.
+4. Verify signup, independent website/extension login, capture and website read/edit; inspect ambiguous-response recovery, Back/Forward and signed-in visits. Confirm restart/redeploy persistence and restore a SQLite-aware backup independently. Never restore older data merely to reverse the UI; that loses later accounts/notes. Revoke restored legacy tokens before reopening access. Prefer a corrective schema-compatible release retaining `/signup` guidance and existing login.
+5. Publish prepared extension **0.1.2** separately to the same item/ID `gdfdnapanhndofblljbgfppndhdlioko`, after checking the actual dashboard/published version is lower. The public store listing retrieved October 8 reports 0.1.0 ([listing](https://chromewebstore.google.com/detail/cp-notes/gdfdnapanhndofblljbgfppndhdlioko)); it can lag dashboard submissions. Update listing copy/privacy disclosures, await review and verify the installed package opens `/signup` in a new tab. CI deploys the website/backend, not the popup. Website signup can open before this store update; existing extension login keeps working.
+6. Record live, browser, restart/restore and published-package evidence separately. Monitor temporary throttling, shared password job saturation, disk usage and backup failures before promotion; a full historical beta counter must never block public signup.
+
+```bash
+sudo -u cp-notes /opt/node/bin/node --env-file=/etc/cp-notes/app.env \
+  "$(readlink -f /opt/cp-notes/current)/backend/dist/admin.js" beta-status
+sudo -u cp-notes /opt/node/bin/node --env-file=/etc/cp-notes/app.env \
+  "$(readlink -f /opt/cp-notes/current)/backend/dist/admin.js" revoke-beta-link
+```
+
+Emails are unverified identifiers; signup sends no verification email and never logs in automatically. For account help, direct users to the existing privacy page contact. Do not reset/reassign based solely on an email claim; require reliable ownership evidence and do not promise recovery without it.
 
 ## 11. Extension releases are separate from website updates
 

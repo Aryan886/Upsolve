@@ -14,6 +14,10 @@ const directory = await mkdtemp(join(tmpdir(), "cp-notes-release-"));
 const databasePath = join(directory, "test.db");
 const password = "release verification password";
 const database = new NotesDatabase(databasePath);
+// Keep a full legacy beta in the disposable database to prove enrollment is independent.
+const betaToken = "historical-beta-token";
+database.issueBetaSignup(hashToken(betaToken), new Date(Date.now() + 86_400_000).toISOString());
+for (let number = 0; number < 30; number++) database.acceptBetaSignup(hashToken(betaToken), `historical${number}@example.test`, "historical hash");
 database.close();
 const origin = "https://notes.example.test";
 
@@ -52,15 +56,6 @@ async function issue(email, extraEnvironment = {}) {
     assert.equal(stored.getInvitation(hashToken(token))?.email, email);
   } finally { stored.close(); }
   return token;
-}
-async function issueBeta() {
-  const stdout = await admin(["beta-link"]);
-  const link = /Shared beta signup link: (\S+)/.exec(stdout)?.[1];
-  assert.ok(link, "Compiled beta command must print a link");
-  const url = new URL(link);
-  assert.equal(url.origin, origin);
-  assert.ok(/^#beta=[A-Za-z0-9_-]{43}$/.test(url.hash));
-  return url.hash.slice("#beta=".length);
 }
 const socket = createServer();
 socket.listen(0, "127.0.0.1");
@@ -103,7 +98,7 @@ try {
   const oldInvitationB = await issue("b@example.test", { INVITATION_HOURS: "2" });
   const invitationB = await issue("b@example.test");
   const revoked = await issue("revoked@example.test");
-  const betaToken = await issueBeta();
+  await assert.rejects(admin(["beta-link"]), /Compiled admin beta-link failed/);
   await admin(["revoke-invite", "revoked@example.test"]);
   assert.match(await admin(["revoke-invite", "revoked@example.test"]), /No outstanding invitation/);
   await start(databasePath);
@@ -116,7 +111,12 @@ try {
   const websiteAsset = await fetch(`${address}${script}`);
   assert.equal(websiteAsset.status, 200);
   assert.match(await websiteAsset.text(), /gdfdnapanhndofblljbgfppndhdlioko/, "Website onboarding must include the published store link");
-  for (const path of ["/.env", "/backend/data/cp-notes.db", "/package.json", "/backend/src/index.ts"]) assert.equal((await fetch(`${address}${path}`)).status, 404);
+  for (const path of ["/signup", "/signup/", "/privacy"]) {
+    const page = await fetch(`${address}${path}`);
+    assert.equal(page.status, 200);
+    assert.match(page.headers.get("content-type"), /html/);
+  }
+  for (const path of ["/signup/missing", "/unknown", "/.env", "/backend/data/cp-notes.db", "/package.json", "/backend/src/index.ts"]) assert.equal((await fetch(`${address}${path}`)).status, 404);
   assert.equal((await api("/feed")).status, 401);
   for (const token of [oldInvitationB, revoked]) {
     const invalid = await api("/auth/invitations/inspect", undefined, { token }, origin);
@@ -136,15 +136,34 @@ try {
     assert.equal((await api("/auth/me", token)).status, 401);
     assert.equal((await api("/auth/invitations/accept", undefined, { token, password }, origin)).status, 400);
   }
-  const betaInspect = await api("/auth/beta/inspect", undefined, { token: betaToken }, origin);
-  assert.equal(betaInspect.status, 200);
-  assert.equal(betaInspect.body.data.remainingSignups, 30);
-  const betaAccepted = await api("/auth/beta/accept", undefined, { token: betaToken, email: "beta@example.test", password }, origin);
-  assert.equal(betaAccepted.status, 201);
-  assert.deepEqual(betaAccepted.body, { data: { email: "beta@example.test" } });
-  assert.equal(betaAccepted.cookie, null);
-  assert.equal((await api("/auth/extension-login", undefined, { email: "beta@example.test", password })).status, 200);
-  assert.match(await admin(["beta-status"]), /1 \/ 30 signups/);
+  for (const action of ["inspect", "accept"]) {
+    const retired = await api(`/auth/beta/${action}`, undefined, { token: betaToken }, origin);
+    assert.equal(retired.status, 410);
+    assert.equal(retired.body.error.code, "beta_signup_retired");
+    assert.match(retired.body.error.message, /https:\/\/notes\.example\.test\/signup/);
+  }
+  for (const email of ["public-a@example.test", "public-b@example.test"]) {
+    const created = await api("/auth/signup", undefined, { email, password }, origin);
+    assert.equal(created.status, 201);
+    assert.deepEqual(created.body, { data: { email } });
+    assert.equal(created.cookie, null);
+    const duplicate = await api("/auth/signup", undefined, { email: email.toUpperCase(), password }, origin);
+    assert.equal(duplicate.status, 409);
+    assert.equal(duplicate.body.error.code, "signup_unavailable");
+  }
+  const publicWebsiteLogin = await api("/auth/login", undefined, { email: "public-a@example.test", password }, origin);
+  assert.equal(publicWebsiteLogin.status, 200);
+  const publicLogin = await api("/auth/extension-login", undefined, { email: "public-a@example.test", password });
+  const otherPublicLogin = await api("/auth/extension-login", undefined, { email: "public-b@example.test", password });
+  assert.equal(publicLogin.status, 200);
+  assert.equal(otherPublicLogin.status, 200);
+  const publicSaved = await api("/snippets", publicLogin.body.data.token, { name: "public capture", language: "cpp", code: "private public-user code" });
+  assert.equal(publicSaved.status, 201);
+  assert.equal((await api("/snippets?query=public", publicLogin.body.data.token)).body.meta.total, 1);
+  assert.equal((await api("/feed", otherPublicLogin.body.data.token)).body.meta.total, 0);
+  assert.equal((await api("/auth/signup", publicLogin.body.data.token, { email: "blocked@example.test", password })).status, 403);
+  assert.equal((await api("/auth/signup", undefined, { email: "extension-blocked@example.test", password }, `chrome-extension://${"a".repeat(32)}`)).status, 403);
+  assert.match(await admin(["beta-status"]), /Historical shared beta signup \(retired\): full; 30 \/ 30 signups/);
   const websiteLogin = await api("/auth/login", undefined, { email: "a@example.test", password }, origin);
   assert.equal(websiteLogin.status, 200);
   assert.ok(websiteLogin.cookie?.includes("Secure"));
@@ -162,13 +181,19 @@ try {
   await stop();
   await start(databasePath);
   assert.equal((await api("/patterns?query=release", token)).body.meta.total, 1);
-  assert.equal((await api("/auth/beta/inspect", undefined, { token: betaToken }, origin)).body.data.remainingSignups, 29);
+  assert.equal((await api("/auth/beta/inspect", undefined, { token: betaToken }, origin)).status, 410);
+  assert.match(await admin(["beta-status"], databasePath), /30 \/ 30 signups/);
+  assert.equal((await api("/snippets?query=public", publicLogin.body.data.token)).body.meta.total, 1);
+  assert.equal((await api("/feed", otherPublicLogin.body.data.token)).body.meta.total, 0);
   assert.equal((await api("/auth/invitations/inspect", undefined, { token: outstanding }, origin)).status, 200);
   await admin(["revoke-invite", "restore@example.test"]);
   assert.equal((await api("/auth/invitations/inspect", undefined, { token: outstanding }, origin)).status, 400);
   await stop();
   await start(backup);
-  assert.equal((await api("/auth/beta/inspect", undefined, { token: betaToken }, origin)).body.data.remainingSignups, 29);
+  assert.equal((await api("/auth/beta/inspect", undefined, { token: betaToken }, origin)).status, 410);
+  assert.match(await admin(["beta-status"], backup), /30 \/ 30 signups/);
+  assert.equal((await api("/snippets?query=public", publicLogin.body.data.token)).body.meta.total, 1);
+  assert.equal((await api("/feed", otherPublicLogin.body.data.token)).body.meta.total, 0);
   assert.equal((await api("/feed", token)).body.meta.total, 1);
   assert.equal((await api("/feed", second.body.data.token)).body.meta.total, 0);
   const restoredLogin = await api("/auth/extension-login", undefined, { email: "a@example.test", password });
@@ -179,12 +204,16 @@ try {
   await admin(["revoke-invite", "restore@example.test"], backup);
   await admin(["revoke-beta-link"], backup);
   assert.equal((await api("/auth/invitations/inspect", undefined, { token: outstanding }, origin)).status, 400);
-  assert.equal((await api("/auth/beta/inspect", undefined, { token: betaToken }, origin)).status, 400);
+  assert.equal((await api("/auth/beta/inspect", undefined, { token: betaToken }, origin)).status, 410);
   await stop();
   const manifest = JSON.parse(await readFile(new URL("../extension/dist/manifest.json", import.meta.url), "utf8"));
   const expectedExtensionOrigin = process.env.EXPECTED_EXTENSION_ORIGIN ?? origin;
   assert.deepEqual(manifest.host_permissions, [`${expectedExtensionOrigin}/*`]);
-  assert.ok(!manifest.permissions.includes("tabs"));
-  console.log("Linux production smoke passed: compiled invitation and beta-link commands, account setup, website/extension login, startup/static assets, authenticated save/search, isolation, signup/session restart persistence, schema-4 restore/revocation, SIGTERM and extension host permission.");
+  assert.deepEqual(manifest.permissions, ["activeTab", "scripting", "storage"]);
+  assert.equal(manifest.version, "0.1.2");
+  const popupHtml = await readFile(new URL("../extension/dist/popup.html", import.meta.url), "utf8");
+  assert.match(popupHtml, /Create account on the website/);
+  assert.match(popupHtml, /id="create-account" target="_blank" rel="noreferrer"/);
+  console.log("Production smoke passed: public signup independent of full beta history, retired beta APIs/issuance, invitations, both logins, direct signup/static routes, authenticated capture/search, isolation, public-user/session restart persistence, schema-4 restore/revocation, SIGTERM and extension link/permissions/version.");
   console.log(`Temporary verification data: ${directory}`);
 } finally { await stop(); }
