@@ -32,117 +32,42 @@ afterEach(() => {
   rmSync(directory, { recursive: true, force: true });
 });
 
-function inspect(signupToken = token) {
-  return request(context.app).post("/api/auth/beta/inspect").set("Origin", origin).send({ token: signupToken });
-}
-
-function accept(email: string, signupToken = token) {
-  return request(context.app).post("/api/auth/beta/accept").set("Origin", origin).send({ token: signupToken, email, password });
-}
-
-it("inspects without using a spot, accepts a normalized email, and requires normal login", async () => {
-  const first = await inspect().expect(200);
-  expect(first.body).toEqual({ data: { expiresAt: expect.any(String), remainingSignups: 30 } });
-  expect(first.headers["cache-control"]).toBe("no-store");
-  expect(first.headers["set-cookie"]).toBeUndefined();
-  await inspect().expect(200);
-  expect(database.getBetaStatus().signupCount).toBe(0);
-  const accepted = await accept("  TESTER@Example.com  ").expect(201);
-  expect(accepted.body).toEqual({ data: { email: "tester@example.com" } });
-  expect(accepted.headers["set-cookie"]).toBeUndefined();
-  expect(database.getBetaStatus().signupCount).toBe(1);
-  await request(context.app).get("/api/auth/me").expect(401);
-  await request(context.app).post("/api/auth/login").set("Origin", origin)
-    .send({ email: "tester@example.com", password }).expect(200);
-  await request(context.app).post("/api/auth/extension-login")
-    .send({ email: "tester@example.com", password }).expect(200);
+it("retires inspect and accept with fixed guidance, no lookup, hashes, sessions or writes", async () => {
+  const source = new Database(path, { readonly: true });
+  try {
+    const history = source.prepare("SELECT * FROM beta_signup").get();
+    for (const body of [{}, { token }, { token: "expired", email: "new@example.com", password }, { token: "", userId: 1 }]) {
+      for (const action of ["inspect", "accept"]) {
+        const result = await request(context.app).post(`/api/auth/beta/${action}`).set("Origin", origin).send(body).expect(410);
+        expect(result.body.error.code).toBe("beta_signup_retired");
+        expect(result.body.error.message).toContain(`${origin}/signup`);
+        expect(result.headers["cache-control"]).toBe("no-store");
+        expect(result.headers["set-cookie"]).toBeUndefined();
+      }
+    }
+    expect(source.prepare("SELECT * FROM beta_signup").get()).toEqual(history);
+    expect(source.prepare("SELECT COUNT(*) AS count FROM users").get()).toEqual({ count: 0 });
+    expect(source.prepare("SELECT COUNT(*) AS count FROM sessions").get()).toEqual({ count: 0 });
+  } finally { source.close(); }
 });
 
-it("rejects wrong origin, malformed and extra input, existing accounts, and unavailable tokens without using spots", async () => {
-  await request(context.app).post("/api/auth/beta/inspect").send({ token }).expect(403);
-  await request(context.app).post("/api/auth/beta/accept").set("Origin", "https://elsewhere.test")
-    .send({ token, email: "test@example.com", password }).expect(403);
-  for (const body of [
-    { token, email: "invalid", password },
-    { token, email: "test@example.com", password: "short" },
-    { token, email: "test@example.com", password, userId: 1 },
-    { token, email: "test@example.com", password, maxSignups: 100 },
-  ]) {
-    const response = await request(context.app).post("/api/auth/beta/accept").set("Origin", origin).send(body).expect(400);
-    expect(response.body.error.code).toBe("validation_error");
-    expect(JSON.stringify(response.body)).not.toContain(password);
+it("retains website-only origin checks for retired endpoints", async () => {
+  for (const action of ["inspect", "accept"]) {
+    await request(context.app).post(`/api/auth/beta/${action}`).send({ token }).expect(403);
+    await request(context.app).post(`/api/auth/beta/${action}`).set("Origin", "https://hostile.test").send({ token }).expect(403);
   }
-  const unknown = await inspect(randomBytes(32).toString("base64url")).expect(400);
-  expect(unknown.body.error.code).toBe("beta_unavailable");
-  database.createUser("existing@example.com", "stored hash");
-  database.createUser("disabled@example.com", "stored hash");
-  database.disableUser(2);
-  for (const email of ["existing@example.com", "disabled@example.com"]) {
-    const response = await accept(email).expect(400);
-    expect(response.body.error.code).toBe("beta_account_unavailable");
-  }
-  expect(database.getBetaStatus().signupCount).toBe(0);
 });
 
-it("allows 30 signups from the same IP and closes before the 31st", async () => {
-  for (let number = 1; number <= 30; number++) {
-    await inspect().expect(200);
-    await accept(`tester${number}@example.com`).expect(201);
-  }
-  const full = await inspect().expect(400);
-  expect(full.body.error.code).toBe("beta_full");
-  expect((await accept("tester31@example.com").expect(400)).body.error.code).toBe("beta_full");
-  expect(database.getBetaStatus()).toMatchObject({ state: "full", signupCount: 30, remainingSignups: 0 });
-  expect(() => database.issueBetaSignup(hashToken("replacement"), new Date(Date.now() + 60_000).toISOString()))
-    .toThrowError(expect.objectContaining({ code: "beta_full" }));
-}, 90_000);
-
-it("preserves capacity and blocks old tokens when rotated, revoked, or expired", async () => {
-  await accept("first@example.com").expect(201);
-  const original = token;
-  token = randomBytes(32).toString("base64url");
-  database.issueBetaSignup(hashToken(token), new Date(Date.now() + 60_000).toISOString());
-  expect(database.getBetaStatus()).toMatchObject({ signupCount: 1, remainingSignups: 29 });
-  expect((await inspect(original).expect(400)).body.error.code).toBe("beta_unavailable");
+it("retains historical beta accounting across rotation, revocation and restart", () => {
+  database.acceptBetaSignup(hashToken(token), "historical@example.com", "stored hash");
+  database.issueBetaSignup(hashToken("replacement"), new Date(Date.now() + 60_000).toISOString());
+  expect(database.getBetaSignup(hashToken(token))).toBeNull();
   expect(database.revokeBetaSignup()).toBe(true);
-  expect(database.revokeBetaSignup()).toBe(false);
-  expect((await inspect().expect(400)).body.error.code).toBe("beta_unavailable");
-  database.issueBetaSignup(hashToken(token), new Date(Date.now() - 1).toISOString());
-  expect(database.getBetaStatus().state).toBe("expired");
-  expect((await inspect().expect(400)).body.error.code).toBe("beta_unavailable");
-  const stored = new Database(path, { readonly: true });
-  try { expect(JSON.stringify(stored.prepare("SELECT * FROM beta_signup").all())).not.toContain(token); }
-  finally { stored.close(); }
+  expect(database.getBetaStatus()).toMatchObject({ state: "revoked", signupCount: 1 });
   context.close();
   context = createApp({ databasePath: path, localDevelopment: true });
-  expect(database.getBetaStatus().signupCount).toBe(1);
+  expect(context.database.getBetaStatus()).toMatchObject({ state: "revoked", signupCount: 1 });
 });
-
-it("admits only one of two distinct requests for the final spot across separate connections", async () => {
-  for (let number = 1; number <= 29; number++) database.acceptBetaSignup(hashToken(token), `earlier${number}@example.com`, "stored hash");
-  const second = createApp({ databasePath: path, localDevelopment: true });
-  try {
-    const responses = await Promise.all([
-      accept("last-a@example.com").then((response) => response),
-      request(second.app).post("/api/auth/beta/accept").set("Origin", origin)
-        .send({ token, email: "last-b@example.com", password }).then((response) => response),
-    ]);
-    expect(responses.map((response) => response.status).sort()).toEqual([201, 400]);
-    expect(responses.find((response) => response.status === 400)?.body.error.code).toBe("beta_full");
-    expect(database.getBetaStatus().signupCount).toBe(30);
-    expect(Number(database.getUserByEmail("last-a@example.com") !== null) + Number(database.getUserByEmail("last-b@example.com") !== null)).toBe(1);
-  } finally { second.close(); }
-}, 30_000);
-
-it("creates one account for concurrent requests with the same email", async () => {
-  const responses = await Promise.all([
-    accept("same@example.com").then((response) => response),
-    accept("same@example.com").then((response) => response),
-  ]);
-  expect(responses.map((response) => response.status).sort()).toEqual([201, 400]);
-  expect(responses.find((response) => response.status === 400)?.body.error.code).toBe("beta_account_unavailable");
-  expect(database.getBetaStatus().signupCount).toBe(1);
-}, 30_000);
 
 it("rolls back the account when the counter update fails", () => {
   const source = new Database(path);

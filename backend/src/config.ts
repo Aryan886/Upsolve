@@ -40,10 +40,6 @@ export function readInvitationConfig(environment: NodeJS.ProcessEnv): { appOrigi
   return { appOrigin, invitationHours: integer(environment.INVITATION_HOURS, 72, "INVITATION_HOURS", 168) };
 }
 
-export function readBetaSignupConfig(environment: NodeJS.ProcessEnv): { appOrigin: string; betaSignupHours: number } {
-  return { appOrigin: readLinkOrigin(environment), betaSignupHours: integer(environment.BETA_SIGNUP_HOURS, 168, "BETA_SIGNUP_HOURS", 168) };
-}
-
 export function readConfig(environment: NodeJS.ProcessEnv) {
   const production = environment.NODE_ENV === "production";
   const localDevelopment = environment.LOCAL_DEVELOPMENT === "true";

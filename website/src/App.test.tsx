@@ -2,15 +2,14 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { StrictMode } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import App, { readSignupLink } from "./App";
-import { acceptBetaSignup, acceptInvitation, ApiError, changePassword, getCurrentUser, inspectBetaSignup, inspectInvitation, login, logout } from "./api";
+import { createAccount, acceptInvitation, ApiError, changePassword, getCurrentUser, inspectInvitation, login, logout } from "./api";
 
 vi.mock("./api", async (importOriginal) => ({
   ...await importOriginal<typeof import("./api")>(),
   getCurrentUser: vi.fn(),
   inspectInvitation: vi.fn(),
   acceptInvitation: vi.fn(),
-  inspectBetaSignup: vi.fn(),
-  acceptBetaSignup: vi.fn(),
+  createAccount: vi.fn(),
   login: vi.fn(),
   logout: vi.fn(),
   changePassword: vi.fn(),
@@ -43,7 +42,6 @@ beforeEach(() => {
   AccountChannel.channels = [];
   vi.mocked(getCurrentUser).mockRejectedValue(new ApiError("session_expired", "Sign in again"));
   vi.mocked(inspectInvitation).mockResolvedValue(invitation);
-  vi.mocked(inspectBetaSignup).mockResolvedValue({ expiresAt: "2030-01-08T00:00:00.000Z", remainingSignups: 30 });
   window.history.replaceState(null, "", "/");
 });
 afterEach(() => { cleanup(); vi.resetAllMocks(); vi.unstubAllGlobals(); });
@@ -60,12 +58,13 @@ it("keeps normal visits on the existing login path", async () => {
   expect(inspectInvitation).not.toHaveBeenCalled();
   expect(acceptInvitation).not.toHaveBeenCalled();
   expect(screen.getByRole("link", { name: "Privacy policy" })).toHaveAttribute("href", "/privacy");
+  expect(screen.getByRole("link", { name: "Create account" })).toHaveAttribute("href", "/signup");
 });
 
-it("takes a shared beta signup through normal login and onboarding", async () => {
-  vi.mocked(acceptBetaSignup).mockResolvedValue({ email: "tester@example.com" });
+it("takes public signup through normal login and onboarding", async () => {
+  vi.mocked(createAccount).mockResolvedValue({ email: "tester@example.com" });
   vi.mocked(login).mockResolvedValue({ ...secondUser, email: "tester@example.com" });
-  render(<App initialSignup={{ kind: "beta", token }} />);
+  render(<App initialSignup={{ kind: "public" }} />);
   await screen.findByRole("button", { name: "Create account" });
   expect(inspectInvitation).not.toHaveBeenCalled();
   fireEvent.change(screen.getByLabelText("Email"), { target: { value: "Tester@Example.com" } });
@@ -74,11 +73,121 @@ it("takes a shared beta signup through normal login and onboarding", async () =>
   fireEvent.submit(screen.getByRole("button", { name: "Create account" }).closest("form")!);
   await screen.findByRole("button", { name: "Sign in" });
   expect(screen.getByLabelText("Email")).toHaveValue("tester@example.com");
-  expect(acceptBetaSignup).toHaveBeenCalledExactlyOnceWith(token, "tester@example.com", "a long password", expect.any(AbortSignal));
+  expect(window.location.pathname).toBe("/");
+  expect(createAccount).toHaveBeenCalledExactlyOnceWith("tester@example.com", "a long password", expect.any(AbortSignal));
   fireEvent.change(screen.getByLabelText("Password"), { target: { value: "a long password" } });
   fireEvent.submit(screen.getByRole("button", { name: "Sign in" }).closest("form")!);
   await screen.findByText("Private diary");
   expect(screen.getByText("Start here").closest("details")).toHaveAttribute("open");
+});
+
+it.each(["/signup", "/signup/"])("opens direct %s after session discovery and offers ordinary login", async (path) => {
+  window.history.replaceState(null, "", path);
+  render(<App />);
+  expect(screen.getByText("Checking your session...")).toBeInTheDocument();
+  expect(screen.queryByLabelText("Confirm password")).not.toBeInTheDocument();
+  await screen.findByLabelText("Confirm password");
+  expect(inspectInvitation).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+  expect(window.location.pathname).toBe("/");
+  expect(screen.getByRole("heading", { name: "Sign in to your diary" })).toBeInTheDocument();
+});
+
+it("blocks public signup after an unexpected session failure until explicit recovery", async () => {
+  vi.mocked(getCurrentUser).mockRejectedValueOnce(new Error("Session check unavailable"))
+    .mockRejectedValueOnce(new ApiError("session_expired", "Sign in again"));
+  window.history.replaceState(null, "", "/signup");
+  render(<App />);
+  expect(await screen.findByRole("alert")).toHaveTextContent("Session check unavailable");
+  expect(screen.queryByLabelText("Confirm password")).not.toBeInTheDocument();
+  expect(createAccount).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  await screen.findByLabelText("Confirm password");
+});
+
+it("waits for a real initial 401 to finish cancellation before activating public signup in StrictMode", async () => {
+  const actual = await vi.importActual<typeof import("./api")>("./api");
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 401 })));
+  vi.mocked(getCurrentUser).mockImplementation(actual.getCurrentUser);
+  window.history.replaceState(null, "", "/signup");
+  render(<StrictMode><App /></StrictMode>);
+  await screen.findByLabelText("Confirm password");
+  expect(getCurrentUser).toHaveBeenCalledTimes(2);
+  expect(createAccount).not.toHaveBeenCalled();
+});
+
+it("keeps URL and UI together on Back/Forward, privacy navigation and success", async () => {
+  render(<App />);
+  await screen.findByRole("button", { name: "Sign in" });
+  function navigate(path: string): void {
+    act(() => {
+      window.history.pushState(null, "", path);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+  }
+  navigate("/signup/");
+  fireEvent.change(screen.getByLabelText("Email"), { target: { value: "tester@example.com" } });
+  fireEvent.change(screen.getByLabelText("Password"), { target: { value: "unsent password" } });
+  navigate("/");
+  expect(screen.getByRole("heading", { name: "Sign in to your diary" })).toBeInTheDocument();
+  navigate("/signup");
+  expect(screen.getByLabelText("Password")).toHaveValue("");
+  navigate("/privacy/");
+  expect(screen.getByRole("heading", { name: "Privacy policy" })).toBeInTheDocument();
+  navigate("/signup");
+  await screen.findByLabelText("Confirm password");
+});
+
+it("preserves a signed-in identity on public signup and after failed logout", async () => {
+  vi.mocked(getCurrentUser).mockResolvedValue(firstUser);
+  vi.mocked(logout).mockRejectedValue(new Error("Sign-out unavailable"));
+  window.history.replaceState(null, "", "/signup");
+  render(<App />);
+  await screen.findByRole("button", { name: "Open diary" });
+  expect(screen.queryByLabelText("Confirm password")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Sign-out unavailable");
+  expect(screen.getByText(/Sign out before setting up/)).toHaveTextContent(firstUser.email);
+  expect(createAccount).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Open diary" }));
+  expect(screen.getByText("Private diary")).toBeInTheDocument();
+  expect(window.location.pathname).toBe("/");
+});
+
+it.each(["login", "logout"])("ignores late public signup after another tab's %s", async (change) => {
+  let finish: (result: { email: string }) => void = () => undefined;
+  vi.mocked(createAccount).mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+  window.history.replaceState(null, "", "/signup");
+  render(<App />);
+  await screen.findByLabelText("Confirm password");
+  fireEvent.change(screen.getByLabelText("Email"), { target: { value: "tester@example.com" } });
+  submitSetup();
+  const signal = vi.mocked(createAccount).mock.calls[0]?.[2];
+  if (change === "login") vi.mocked(getCurrentUser).mockResolvedValueOnce(secondUser);
+  act(() => { AccountChannel.changed(); });
+  if (change === "login") await screen.findByText("Private diary");
+  else await screen.findByRole("button", { name: "Sign in" });
+  expect(signal?.aborted).toBe(true);
+  await act(async () => { finish({ email: "tester@example.com" }); });
+  expect(screen.queryByText(/Account created/)).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Confirm password")).not.toBeInTheDocument();
+  expect(screen.queryByDisplayValue("tester@example.com")).not.toBeInTheDocument();
+});
+
+it("keeps confirmed creation separate from a subsequent failed login", async () => {
+  vi.mocked(createAccount).mockResolvedValue({ email: "tester@example.com" });
+  vi.mocked(login).mockRejectedValue(new Error("Sign-in unavailable"));
+  window.history.replaceState(null, "", "/signup");
+  render(<App />);
+  await screen.findByLabelText("Confirm password");
+  fireEvent.change(screen.getByLabelText("Email"), { target: { value: "tester@example.com" } });
+  submitSetup();
+  await screen.findByRole("button", { name: "Sign in" });
+  fireEvent.change(screen.getByLabelText("Password"), { target: { value: "a long password" } });
+  fireEvent.submit(screen.getByRole("button", { name: "Sign in" }).closest("form")!);
+  expect(await screen.findByRole("alert")).toHaveTextContent("Sign-in unavailable");
+  expect(screen.getByRole("status")).toHaveTextContent("Account created. Sign in to continue.");
+  expect(createAccount).toHaveBeenCalledOnce();
 });
 
 it.each(["/privacy", "/privacy/"])("shows the public policy at %s without checking a session or invitation", (path) => {

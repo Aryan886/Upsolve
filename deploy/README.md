@@ -36,8 +36,6 @@ EXTENSION_ORIGINS=chrome-extension://YOUR_32_LETTER_ID
 SESSION_DAYS=30
 # Optional operator setting for newly issued invitations (1–168 hours):
 # INVITATION_HOURS=72
-# Optional operator setting for newly issued shared beta links (1–168 hours):
-# BETA_SIGNUP_HOURS=168
 ```
 
 `APP_ORIGIN` has no path or trailing slash. Configure each technical tester's unpacked ID explicitly if no common manifest key exists. CORS and IDs are not authentication. Production Node reads the environment supplied by systemd, not a repository `.env`.
@@ -94,13 +92,19 @@ Neither command prompts for a password or accepts an additional password/token a
 
 Default expiry is 72 hours; `INVITATION_HOURS` permits 1–168 integer hours and applies only to new invitations. `APP_ORIGIN` is the link base and production requires HTTPS. Explicit local development permits loopback HTTP only. Reissuing for the same email immediately invalidates the old link; use replacement after output failure. Revoke reports whether an invitation existed, without touching accounts, notes, passwords or sessions. Existing users, including disabled ones, are rejected; handle their password resets with the existing `reset` command and do not reactivate them through invitations.
 
-The tester opens the link, chooses and confirms a 12–128 character password, signs in to the website, follows “Start here” to install the extension, and signs in there with the same credentials. Opening/inspecting a link never consumes it. The fragment is removed immediately and retained only in page memory; refresh requires reopening the original link. A signed-in tester must explicitly sign out or return to the current diary. There is no automated email delivery, public registration or automatic login after acceptance.
+The tester opens the link, chooses and confirms a 12–128 character password, signs in to the website, follows “Start here” to install the extension, and signs in there with the same credentials. Opening/inspecting a link never consumes it. The fragment is removed immediately and retained only in page memory; refresh requires reopening the original link. A signed-in tester must explicitly sign out or return to the current diary. Public website registration is implemented locally; optional invitation acceptance still does not send email or log in automatically.
 
 If acceptance is interrupted, the account may already exist. Tell the tester to sign in with the password just chosen before requesting another link; do not automatically replay acceptance. Invalid or used links provide the same recovery guidance. If sign-in fails, provide a replacement or the manual reset procedure as appropriate. Invitations cannot access notes or serve as login/reset credentials.
 
-## Shared beta signup operations
+## Public signup and legacy beta operations
 
-Schema 4 was deployed on October 3. Run `admin.js beta-link`, `admin.js beta-status`, or `admin.js revoke-beta-link` with the same `sudo -u cp-notes /opt/node/bin/node --env-file=/etc/cp-notes/app.env "$(readlink -f /opt/cp-notes/current)/backend/dist/admin.js"` prefix used above. Resolve `current`: the compiled CLI can exit without running when invoked through the symlink. The shared link is printed only on issue/reissue. It expires after seven days by default (`BETA_SIGNUP_HOURS`, 1–168), admits 30 successfully created accounts across all reissues, and can be revoked without affecting current users. Status shows usage but never the token. Existing accounts and individual invitations are outside its count. A tester enters an email/password, signs in normally, then follows onboarding to the [published extension](https://chromewebstore.google.com/detail/cp-notes/gdfdnapanhndofblljbgfppndhdlioko).
+The public signup implementation uses `/signup` and `POST /api/auth/signup` without a token or lifetime cap. Backend/website rollout and extension publication are separate, pending steps; see [cutover](LIGHTSAIL_RUNBOOK.md#10b-public-website-signup-cutover). No migration or new runtime settings are required; schema stays 4 and `beta_signup` is historical data. The extension package is prepared as 0.1.2 with the same identity and permissions. The old published extension can still sign in to public accounts even before its signup link is updated.
+
+`admin.js beta-link` returns retirement guidance and never changes the database. `admin.js beta-status` reports historical usage without a token, and `admin.js revoke-beta-link` is retained for authorized cleanup. Run them with the existing `sudo -u cp-notes /opt/node/bin/node --env-file=/etc/cp-notes/app.env "$(readlink -f /opt/cp-notes/current)/backend/dist/admin.js"` prefix. Old beta bookmarks route to public signup; both beta APIs return website-origin-protected `410 beta_signup_retired` with the public URL. A stale website should refresh and use signup or ordinary login.
+
+At authorized cutover, take the normal SQLite-aware verified backup and revoke the stored beta token without resetting its count or deleting users. Older schema-4 binaries/backups can otherwise revive capped enrollment. Keep public access closed during recovery until restored legacy tokens have been revoked. Rollback should retain current accounts/notes and `/signup`; do not restore old data just to reverse UI changes.
+
+Signup requires the configured website Origin even when credentials are supplied. The process-local throttle allows 20 attempts per IP and 5 per normalized email per 15 minutes, separate from login budgets; two concurrent password jobs are shared with login. Origin headers can be forged by scripts, addresses are unverified, availability remains observable, and distributed account farming is possible. Monitor hash contention, disk growth, backup age/failures and service errors before wider promotion. Email verification, CAPTCHA and automated recovery remain future work. Reset/reassignment requires reliable account ownership evidence; email knowledge alone is insufficient.
 
 ## Repeatable updates and rollback
 

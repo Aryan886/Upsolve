@@ -1,6 +1,6 @@
 # Unlisted Chrome Web Store release preparation
 
-Status: prepared copy; store submission is not verified here. The public privacy page is implemented locally; deployment and signed-out access at its final URL still need verification. Confirm the uploaded extension ID, install link and reviewer account before submission.
+Status: public-signup update prepared as extension 0.1.2 under the existing item/ID; store submission is not verified here. The public privacy page is implemented locally; deployment and signed-out access at its final URL still need verification. Confirm the uploaded extension ID, install link and reviewer account before submission.
 
 ## Listing copy
 
@@ -8,7 +8,7 @@ Status: prepared copy; store submission is not verified here. The public privacy
 
 **Short description:** Capture competitive programming patterns, mistakes, snippets, and editorial takeaways in your private diary.
 
-**Description:** Open a supported LeetCode, Codeforces, CodeChef or AtCoder problem and capture the insight you want to remember. Save a pattern, a mistake and its root cause, a reusable code snippet, or a short editorial takeaway. Review and edit your entries in your private CP Notes diary. Unsent drafts are recovered when you return to the same problem and note type. This invitation-only beta requires an individual CP Notes account. It does not import submission history or require credentials for coding platforms.
+**Description:** Open a supported LeetCode, Codeforces, CodeChef or AtCoder problem and capture the insight you want to remember. Save a pattern, a mistake and its root cause, a reusable code snippet, or a short editorial takeaway. Review and edit your entries in your private CP Notes diary. Unsent drafts are recovered when you return to the same problem and note type. Create an individual CP Notes account on the companion website at /signup, then sign in to the extension with the same email and password. No invitation or installed extension is needed to create an account. Email verification and automatic password recovery are not available yet; use the privacy page contact for account help. It does not import submission history or require credentials for coding platforms.
 
 **Single purpose:** Save and review the user's competitive programming learning notes.
 
@@ -25,7 +25,7 @@ CP Notes sends your account email, selected problem metadata and the notes/code 
 
 Deletion/reset contact: **aryankhade80@gmail.com**, phone **7219283196**. The public policy source is `website/src/pages/PrivacyPage.tsx`; the intended deployed URL is `https://upsolve-aryan.duckdns.org/privacy`. Verify deployment before using this URL in the store. Notes remain until deleted or the operator fulfills an account deletion request; deleting a note retains its linked problem record. Backup/migration copies may retain deleted data until rotated or manually removed. The deployment configuration targets 14-day daily-backup retention, but this has not been verified on the live service, and migration copies have separate retention. Do not promise a universal 14-day deletion deadline. Confirm actual backup retention and update the policy before submission if a specific deadline is promised.
 
-Data-use disclosures: personally identifiable information (email/account ID), authentication information (login/session), location (IP addresses used for sign-in protection), web history (captured problem URLs/titles), and website content (notes/code/problem details). The extension has no remote executable code. Feedback opens Google Forms separately. Ensure store declarations match the public policy and actual operating practices, including Limited Use. Do not claim zero data collection.
+Data-use disclosures: personally identifiable information (email/account ID), authentication information (login/session), location (IP addresses used for sign-in/signup protection), web history (captured problem URLs/titles), and website content (notes/code/problem details). The extension has no remote executable code. Feedback opens Google Forms separately. Ensure store declarations match the public policy and actual operating practices, including Limited Use. Do not claim zero data collection.
 
 ## Store assets and reviewer preparation
 
@@ -35,6 +35,8 @@ Data-use disclosures: personally identifiable information (email/account ID), au
 - Create a restricted tester account for the reviewer through the operator CLI; provide credentials privately in the reviewer fields, not in this repository.
 - Select unlisted distribution, publish the privacy disclosure at its final URL, complete data-use disclosures, and submit for review.
 - Obtain the store item's public manifest key when available; use it for stable unpacked IDs and align backend `EXTENSION_ORIGINS` with the verified ID.
-- Smoke-test with the owner and a second technical tester before sharing with all 10 invited testers. Do not promise a publication date before review.
+- Smoke-test with the owner and a second technical tester before wider promotion. Do not promise a publication date before review.
 
 References: [manifest key](https://developer.chrome.com/docs/extensions/reference/manifest/key), [distribution](https://developer.chrome.com/docs/webstore/cws-dashboard-distribution), [developer registration](https://developer.chrome.com/docs/webstore/register).
+
+Before publishing this update, deploy and verify public website signup; upload 0.1.2 to the same item/ID, verify the actual dashboard version is lower, update listing/disclosure copy and verify the installed package after review. Account resets or transfers require reliable ownership proof, not knowledge of an email address; do not promise automated recovery.

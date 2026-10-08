@@ -30,6 +30,7 @@ it("prefills an invited email without persisting or prefilling the password", ()
   render(<LoginForm onLogin={vi.fn()} initialEmail="tester@example.com" />);
   expect(screen.getByLabelText("Email")).toHaveValue("tester@example.com");
   expect(screen.getByLabelText("Password")).toHaveValue("");
+  expect(screen.getByRole("link", { name: "Create account" })).toHaveAttribute("href", "/signup");
 });
 
 it("ignores a sign-in result after the form was removed", async () => {

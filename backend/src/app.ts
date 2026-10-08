@@ -213,7 +213,7 @@ export function createApp(options: CreateAppOptions): { app: express.Express; cl
   app.use("/api", api);
   if (options.websiteDirectory) {
     app.use(express.static(options.websiteDirectory, { dotfiles: "deny", index: false }));
-    app.get(["/", "/privacy"], (_request, response) => response.sendFile(join(options.websiteDirectory!, "index.html")));
+    app.get(["/", "/privacy", "/signup"], (_request, response) => response.sendFile(join(options.websiteDirectory!, "index.html")));
   }
 
   app.use((_request, _response, next) => {
@@ -246,7 +246,7 @@ export function createApp(options: CreateAppOptions): { app: express.Express; cl
       });
       return;
     }
-    console.error(`[${request.method}] Unexpected server error`, error instanceof Error ? error.name : "Unknown error");
+    console.error(`[${request.method} ${request.route?.path ?? "unmatched route"}] Unexpected server error`, error instanceof Error ? error.name : "Unknown error");
     response.status(500).json({ error: { code: "internal_error", message: "An unexpected error occurred" } });
   });
 
